@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  worldcup-engine:
+    build: .
+    image: worldcup-engine:1.2
+    container_name: wc-engine
+    ports:
+      - "8088:8088"
+    volumes:
+      # 挂载数据目录，便于持久化和外部更新
+      - ./data:/app/data
+    restart: unless-stopped
+    
+  # 可选：定时任务（每 6 小时跑一次）
+  # cron:
+  #   image: worldcup-engine:1.2
+  #   container_name: wc-cron
+  #   volumes:
+  #     - ./data:/app/data
+  #   command: |
+  #     sh -c "while true; do
+  #       python3 code/data/elo_fetcher.py
+  #       python3 code/run_tournament.py 100000
+  #       sleep 21600
+  #     done"

@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.git
+.gitignore
+.DS_Store
+data/historical/results.csv.gz
+data/outputs/mc_simulation_n100.json
+data/outputs/mc_simulation_n1000.json
+data/outputs/mc_simulation_n10000.json
+logs/*
+*.log

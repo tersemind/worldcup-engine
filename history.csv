@@ -1,0 +1,13 @@
+predict_date,event,team,predicted_prob,ci_lower,ci_upper,market_implied,bias_pp,confidence,actual_result,brier_score,accuracy_1to5
+2026-06-09,2026WC_Group_Match1,Spain,0.8500,0.80,0.90,0.8200,+3.00,high,WIN,0.0225,
+2026-06-09,2026WC_Group_Match1,France,0.7800,0.72,0.84,0.7500,+3.00,high,WIN,0.0484,
+2026-06-09,2026WC_Group_Match1,Argentina,0.7800,0.72,0.84,0.7500,+3.00,high,WIN,0.0484,
+2026-06-09,2026WC_Group_Match1,Brazil,0.9100,0.85,0.97,0.8800,+3.00,high,WIN,0.0081,
+2026-06-09,2026WC_Group_Match1,Germany,0.9500,0.92,0.98,0.9300,+2.00,high,WIN,0.0025,
+2026-06-09,2026WC_Group_Match1,England,0.7500,0.68,0.82,0.7200,+3.00,high,WIN,0.0625,
+2026-06-09,2026WC_Group_Match2,Croatia,0.5500,0.45,0.65,0.5000,+5.00,med,LOSE,0.3025,
+2026-06-09,2026WC_Group_Match2,Belgium,0.6500,0.55,0.75,0.6000,+5.00,med,WIN,0.1225,
+2026-06-09,2026WC_Group_Match2,Japan,0.4000,0.30,0.50,0.4500,-5.00,low,WIN,0.3600,
+2026-06-09,2026WC_Group_Match2,Mexico,0.5500,0.45,0.65,0.6000,-5.00,med,WIN,0.2025,
+2026-06-09,2026WC_Group_Match3,Senegal,0.4500,0.35,0.55,0.4200,+3.00,low,LOSE,0.2025,
+2026-06-09,2026WC_Group_Match3,USA,0.5500,0.45,0.65,0.5000,+5.00,med,WIN,0.2025,
