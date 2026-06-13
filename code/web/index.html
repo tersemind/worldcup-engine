@@ -706,6 +706,17 @@ async function renderGroupSchedule() {
   if (dm && dm.n_draw_likely > 0) {
     const ratePct = (dm.target_rate * 100).toFixed(0);
     const cutoffStr = (dm.cutoff_score != null) ? dm.cutoff_score.toFixed(3) : '-';
+    // 已结束 draw_likely 的命中复盘
+    let nPlayedDrawLikely = 0, nHit = 0;
+    (d.matches || []).forEach(m => {
+      if (m.status === 'played' && m.prediction && m.prediction.is_draw_likely) {
+        nPlayedDrawLikely++;
+        if (!(m.actual_result && m.actual_result.winner)) nHit++;
+      }
+    });
+    const reviewHtml = nPlayedDrawLikely > 0
+      ? ` <span style="color:#aaa;margin:0 6px">·</span> <span style="color:#4ade80;margin:0 6px">复盘 ${nHit}/${nPlayedDrawLikely} 命中</span>`
+      : '';
     const tip = `命中规则：复合分 score = p_draw - 0.5×p_diff，按 top-K 排名命中\n` +
                 `K = round(N × ${ratePct}%) = ${dm.target_k} 场\n` +
                 `cutoff_score = ${cutoffStr}（兜底门槛 ${dm.score_floor}）\n` +
@@ -717,8 +728,8 @@ async function renderGroupSchedule() {
         <span style="color:#aaa;margin:0 6px">·</span>
         <span style="color:#888;margin:0 6px">cutoff ${cutoffStr}</span>
         <span style="color:#aaa;margin:0 6px">·</span>
-        <span style="color:#666;margin:0 6px">历届基准 25%</span>
-        <span style="color:#666;margin-left:8px;font-size:0.85em">（点击有 ▾平 标记的行查看双注建议）</span>
+        <span style="color:#666;margin:0 6px">历届基准 25%</span>${reviewHtml}
+        <span style="color:#666;margin-left:8px;font-size:0.85em">（信号列 🤝 / 行内 ▾平 可展开详情）</span>
       </div>`;
   }
 
@@ -749,6 +760,7 @@ async function renderGroupSchedule() {
     html += '<th class="num">主胜%</th><th class="num">平%</th><th class="num">客胜%</th>';
     html += '<th class="num">净胜球</th><th class="num">预测比分</th>';
     html += '<th class="num" title="Kalshi 真单场赔率 vs 模型偏差（爆冷信号）">⚖ 市场</th>';
+    html += '<th class="num" title="独立信号徽章：🤝 平局候选（已结束场加✓/✗ 命中标识）">信号</th>';
     html += '<th class="num">状态</th>';
     html += '</tr></thead><tbody>';
 
@@ -758,8 +770,10 @@ async function renderGroupSchedule() {
       const k = p.forecast_format || {};
       const winner = isPlayed ? m.actual_result.winner : p.predicted_winner;
       const isTossUp = !isPlayed && p.is_toss_up;
-      const isDrawLikely = !isPlayed && p.is_draw_likely;
-      const isUndecided = isTossUp || isDrawLikely;
+      // draw_likely 解除「!isPlayed」限制：已结束场次也保留候选标记，方便复盘
+      // 状态列只展示比赛阶段；候选信号挪到独立徽章字段（不与已结束/已锁互斥）
+      const isDrawLikely = p.is_draw_likely === true;
+      const isUndecided = isTossUp || (!isPlayed && isDrawLikely);
       const aCls = isUndecided ? '' : (winner === m.team_a ? 'winner' : (winner === m.team_b ? 'loser' : ''));
       const bCls = isUndecided ? '' : (winner === m.team_b ? 'winner' : (winner === m.team_a ? 'loser' : ''));
 
@@ -819,15 +833,32 @@ async function renderGroupSchedule() {
 
       const isFrozen = !isPlayed && p.frozen === true;
       const frozenAtShort = (p.frozen_at || '').replace('T', ' ').substring(0, 16);
+      // 状态列仅表达「比赛阶段」：已结束 / 进行中(已锁) / 势均力敌 / 未开始
+      // 平局候选作为「信号徽章」单列展示（drawBadge），不再挤占状态列
       const status = isPlayed
         ? '<span style="color:#4ade80">✅ 已结束</span>'
         : (isFrozen
             ? `<span style="color:#60a5fa" title="比赛已开始 · 预测已锁定&#10;锁定时间: ${frozenAtShort}&#10;锁定后续 cascade 不再修改本场对阵预测">🔒 进行中（预测已锁）</span>`
             : (isTossUp
                 ? '<span style="color:#fb923c" title="主胜与客胜差距 < 5pp 且平局率高">⚖ 势均力敌</span>'
-                : (isDrawLikely
-                    ? `<span style="color:#a78bfa" title="复合分 score=p_draw-0.5×p_diff 进入 top-${(d.draw_meta&&d.draw_meta.target_k)||18}（对齐 WC 2002-2022 平均 25%）&#10;本场 score=${(p.draw_score!=null?p.draw_score.toFixed(3):'-')}">🤝 平局候选</span>`
-                    : '<span style="color:#fbbf24">🕒 未开始</span>')));
+                : '<span style="color:#fbbf24">🕒 未开始</span>'));
+
+      // 平局候选独立徽章（已结束/已锁/未开赛通用，互不冲突）
+      let drawBadge = '';
+      if (isDrawLikely) {
+        const scStr = (p.draw_score != null) ? p.draw_score.toFixed(3) : '-';
+        const tk = (d.draw_meta && d.draw_meta.target_k) || 18;
+        let hitMark = '';
+        if (isPlayed) {
+          // 已结束场次：标注预测平局是否命中（actual.winner 为空字符串/null 表示平）
+          const actualWinner = m.actual_result && m.actual_result.winner;
+          const isActualDraw = !actualWinner;  // null/'' 都视作平
+          hitMark = isActualDraw
+            ? '<span style="color:#4ade80;margin-left:3px" title="实际平局 ✓ 命中">✓</span>'
+            : '<span style="color:#888;margin-left:3px" title="实际非平局">✗</span>';
+        }
+        drawBadge = `<span style="color:#a78bfa;font-size:0.85em;cursor:help" title="复合分 score = p_draw - 0.5×p_diff 进入 top-${tk}&#10;本场 score = ${scStr}&#10;对齐 WC 2002-2022 小组赛平均平局率 ~25%">🤝${hitMark}</span>`;
+      }
 
       const predOpacity = isPlayed ? 'opacity:0.55' : '';
 
@@ -872,6 +903,7 @@ async function renderGroupSchedule() {
         <td class="num" style="color:#aaa;${predOpacity}">${goalDiff}</td>
         <td class="num" style="color:#fbbf24;${predOpacity}">${topScore}</td>
         ${marketCell}
+        <td class="num">${drawBadge || '<span style="color:#444">-</span>'}</td>
         <td class="num">${status}</td>
       </tr>`;
       
@@ -1006,17 +1038,29 @@ async function renderGroupSchedule() {
           const sc = (p.draw_score != null) ? p.draw_score.toFixed(3) : '-';
           const cutoff = (dm2.cutoff_score != null) ? dm2.cutoff_score.toFixed(3) : '-';
           const targetK = dm2.target_k || 18;
+          // 已结束场次展示「事后复盘」；未开赛展示「双注建议」
+          let drawTail = '';
+          if (isPlayed) {
+            const ar = m.actual_result || {};
+            const isActualDraw = !ar.winner;
+            const verdict = isActualDraw
+              ? `<span style="color:#4ade80;font-weight:bold">✓ 命中</span>：实际比分 <strong>${ar.score_str || '-'}</strong>，平局判定正确`
+              : `<span style="color:#888">✗ 未命中</span>：实际 <strong>${ar.score_str || '-'}</strong>，由 ${zhShort(ar.winner)} 取胜`;
+            drawTail = `<br><span style="color:#aaa;font-size:0.9em">复盘：${verdict}</span>`;
+          } else {
+            drawTail = `<br>建议覆盖「${zhShort(m.team_a)} 胜 + 平」或「${zhShort(m.team_b)} 胜 + 平」双注，单押风险高。`;
+          }
           drawBlock = `<div style="margin-bottom:12px;padding:10px 14px;border-left:3px solid #a78bfa;background:rgba(167,139,250,0.08)">
             <div style="color:#a78bfa;font-weight:bold;margin-bottom:4px">🤝 平局候选场</div>
             <div style="color:#ddd;font-size:0.9em;line-height:1.5">
               主胜 ${pa}% / 平 ${pd}% / 客胜 ${pb}%，主客差距 ${diff.toFixed(1)}pp。
               <br><span style="color:#aaa;font-size:0.9em">复合分 score = p<sub>draw</sub> − 0.5×p<sub>diff</sub> = <strong style="color:#a78bfa">${sc}</strong>，进入 top-${targetK}（cutoff ${cutoff}）；规则对齐 WC 2002-2022 小组赛平均平局率 ~25%。</span>
-              <br>建议覆盖「${zhShort(m.team_a)} 胜 + 平」或「${zhShort(m.team_b)} 胜 + 平」双注，单押风险高。
+              ${drawTail}
             </div>
           </div>`;
         }
         html += `<tr id="${detailId}" style="display:none;background:rgba(255,255,255,0.04)">
-          <td colspan="13" style="padding:14px 22px">
+          <td colspan="14" style="padding:14px 22px">
             ${frozenBlock}
             ${drawBlock}
             ${llmBlock}
