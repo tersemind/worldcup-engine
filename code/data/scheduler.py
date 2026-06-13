@@ -72,6 +72,7 @@ DEFAULT_CONFIG = {
         "squad_value":     {"interval_min": 10080,"enabled": True, "timeout_sec": 1200,"triggers_cascade": True,  "description": "Transfermarkt 阵容市值（每周 1 次），回写 teams.json[*].squad_value_m_eur"},
         "referee":         {"interval_min": 120,  "enabled": True, "timeout_sec": 600, "triggers_cascade": True,  "description": "裁判任命（赛前 30h 内抓取，24h 不重抓）；接入 synthesizer 裁判风格调整"},
         "in_match":        {"interval_min": 10,   "enabled": True, "timeout_sec": 120, "triggers_cascade": False, "description": "赛中迭代（MRCA+ITA+SOA）。仅当 live_events.json 有 live_matches 时实际跑；写 in_match_update.json 给 web 直读"},
+        "live_trading_tick":{"interval_min": 1,    "enabled": True, "timeout_sec": 30,  "triggers_cascade": False, "description": "quant 高频量化 tick（仅 live match 存在时跑）；写 in_match_live.json + in_match_ticks.jsonl"},
     }
 }
 
@@ -867,6 +868,27 @@ def task_in_match(timeout: int = 120) -> dict:
     except Exception as e:
         # 任何异常都不能影响 scheduler 主循环
         return {"changed": False, "summary": f"in_match 异常: {type(e).__name__}: {e}"}
+
+
+def task_live_trading_tick(timeout: int = 30) -> dict:
+    """quant 高频量化 tick（每 60s 跑一次）。
+
+    仅当 has_live_match() == True 时实际跑（否则秒退）。
+    写 in_match_live.json（snapshot, web 直读）+ in_match_ticks.jsonl（append）。
+
+    任何异常都吞掉，绝不破坏主调度。
+    """
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(ROOT / "code"))
+        from quant.live_trading_loop import run_tick
+        out = run_tick(verbose=False)
+        return {
+            "changed": out.get("changed", False),
+            "summary": out.get("summary", "?"),
+        }
+    except Exception as e:
+        return {"changed": False, "summary": f"live_trading_tick 异常: {type(e).__name__}: {e}"}
 
 
 def _sync_live_state():
@@ -1685,6 +1707,7 @@ TASK_REGISTRY = {
     "squad_value":         task_squad_value,
     "referee":             task_referee,
     "in_match":            task_in_match,
+    "live_trading_tick":   task_live_trading_tick,
 }
 
 

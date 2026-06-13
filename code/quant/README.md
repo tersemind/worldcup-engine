@@ -20,8 +20,8 @@
 | `live_stats_features.py` | v2 ESPN summary 信号映射 | 🚧 待 S4 |
 | `market_anomaly_detector.py` | v3' Kalshi 异动检测 | 🚧 待 S5 |
 | `live_fetcher_extras.py` | ESPN summary endpoint 扩展 | 🚧 待 S3 |
-| `live_trading_loop.py` | 主调度 tick（每 60s） | 🚧 待 S2 |
-| `tick_writer.py` | 落盘工具（snapshot+jsonl） | 🚧 待 S2 |
+| `live_trading_loop.py` | 主调度 tick（每 60s） | ✅ S2 完成 |
+| `tick_writer.py` | 落盘工具（snapshot+jsonl） | ✅ S2 完成 |
 
 ## 测试
 
@@ -64,7 +64,7 @@ live tick (60s):
 ## 实施进度
 
 - [x] **S1** 模块骨架 + `live_elo_solver.py` v1（20 unit tests 全通过）
-- [ ] **S2** `live_trading_loop.py` + `tick_writer.py` + scheduler 注册
+- [x] **S2** `live_trading_loop.py` + `tick_writer.py` + scheduler 注册（端到端 mock 验证通过）
 - [ ] **S3** `live_fetcher_extras.py`（ESPN summary）
 - [ ] **S4** `live_stats_features.py`（v2 量化映射）
 - [ ] **S5** `market_anomaly_detector.py`（v3' 异动检测）
