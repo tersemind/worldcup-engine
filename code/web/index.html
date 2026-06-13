@@ -683,6 +683,28 @@ async function renderGroupSchedule() {
       <span style="color:#666;margin-left:8px;font-size:0.85em">（点击有 ▾伤 标记的行查看详情）</span>
     </div>` : '';
 
+  // 平局候选雷达（新逻辑：复合分 top-K + 历届基准）
+  let drawBar = '';
+  const dm = d.draw_meta;
+  if (dm && dm.n_draw_likely > 0) {
+    const ratePct = (dm.target_rate * 100).toFixed(0);
+    const cutoffStr = (dm.cutoff_score != null) ? dm.cutoff_score.toFixed(3) : '-';
+    const tip = `命中规则：复合分 score = p_draw - 0.5×p_diff，按 top-K 排名命中\n` +
+                `K = round(N × ${ratePct}%) = ${dm.target_k} 场\n` +
+                `cutoff_score = ${cutoffStr}（兜底门槛 ${dm.score_floor}）\n` +
+                `历届基准：WC 2002-2022 小组赛平均平局率 ~25.7%`;
+    drawBar = `
+      <div style="margin-top:6px;font-size:0.85em" title="${tip.replace(/"/g, '&quot;')}">
+        <span style="color:#888">🤝 平局雷达：</span>
+        <span style="color:#a78bfa;margin:0 6px">${dm.n_draw_likely}/${d.n_matches} 场入围（目标 ${ratePct}%）</span>
+        <span style="color:#aaa;margin:0 6px">·</span>
+        <span style="color:#888;margin:0 6px">cutoff ${cutoffStr}</span>
+        <span style="color:#aaa;margin:0 6px">·</span>
+        <span style="color:#666;margin:0 6px">历届基准 25%</span>
+        <span style="color:#666;margin-left:8px;font-size:0.85em">（点击有 ▾平 标记的行查看双注建议）</span>
+      </div>`;
+  }
+
   let html = `<div style="margin-bottom:10px;">${tabChannelSwitcherHTML('group_schedule', '通道')}</div>`;
   html += `<div style="background:rgba(74,222,128,0.08);padding:12px;border-radius:8px;margin-bottom:20px;">
     <strong style="color:#4ade80">${d.n_played}</strong> 场已结束 ·
@@ -690,6 +712,7 @@ async function renderGroupSchedule() {
     共 ${d.n_matches} 场
     ${llmBadgeBar}
     ${injBar}
+    ${drawBar}
   </div>`;
 
   // 按组分类展示
@@ -781,7 +804,7 @@ async function renderGroupSchedule() {
         : (isTossUp
             ? '<span style="color:#fb923c" title="主胜与客胜差距 < 5pp 且平局率高">⚖ 势均力敌</span>'
             : (isDrawLikely
-                ? '<span style="color:#a78bfa" title="主客差距 < 5pp 且平局率位于全部场次 Q3 以上：平局是真候选">🤝 平局候选</span>'
+                ? `<span style="color:#a78bfa" title="复合分 score=p_draw-0.5×p_diff 进入 top-${(d.draw_meta&&d.draw_meta.target_k)||18}（对齐 WC 2002-2022 平均 25%）&#10;本场 score=${(p.draw_score!=null?p.draw_score.toFixed(3):'-')}">🤝 平局候选</span>`
                 : '<span style="color:#fbbf24">🕒 未开始</span>'));
 
       const predOpacity = isPlayed ? 'opacity:0.55' : '';
@@ -924,10 +947,15 @@ async function renderGroupSchedule() {
           const pd = (p.p_draw*100).toFixed(1);
           const pb = (p.p_win_b*100).toFixed(1);
           const diff = Math.abs(p.p_win_a - p.p_win_b)*100;
+          const dm2 = d.draw_meta || {};
+          const sc = (p.draw_score != null) ? p.draw_score.toFixed(3) : '-';
+          const cutoff = (dm2.cutoff_score != null) ? dm2.cutoff_score.toFixed(3) : '-';
+          const targetK = dm2.target_k || 18;
           drawBlock = `<div style="margin-bottom:12px;padding:10px 14px;border-left:3px solid #a78bfa;background:rgba(167,139,250,0.08)">
             <div style="color:#a78bfa;font-weight:bold;margin-bottom:4px">🤝 平局候选场</div>
             <div style="color:#ddd;font-size:0.9em;line-height:1.5">
-              主胜 ${pa}% / 平 ${pd}% / 客胜 ${pb}%，主客差距仅 ${diff.toFixed(1)}pp 且平局率位于全 72 场 Q3 以上。
+              主胜 ${pa}% / 平 ${pd}% / 客胜 ${pb}%，主客差距 ${diff.toFixed(1)}pp。
+              <br><span style="color:#aaa;font-size:0.9em">复合分 score = p<sub>draw</sub> − 0.5×p<sub>diff</sub> = <strong style="color:#a78bfa">${sc}</strong>，进入 top-${targetK}（cutoff ${cutoff}）；规则对齐 WC 2002-2022 小组赛平均平局率 ~25%。</span>
               <br>建议覆盖「${zhShort(m.team_a)} 胜 + 平」或「${zhShort(m.team_b)} 胜 + 平」双注，单押风险高。
             </div>
           </div>`;
