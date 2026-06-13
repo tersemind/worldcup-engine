@@ -1238,27 +1238,57 @@ def api_group_schedule(channel: Optional[str] = None) -> Dict[str, Any]:
         
         out_matches.append(entry)
     
-    # ===== 平局场决标记（2026-06-13 方案丙）=====
+    # ===== 平局场决标记（2026-06-13 方案丙 + 06-13 历届基准校准）=====
     # 起因：is_toss_up 阈值 (p_diff<5pp AND p_d>p_main-5pp) 太严，72 场命中 0
     # Poisson+ELO 集成天然把 p_draw 压在 26-28%，永远不会是 argmax
-    # 修法：跨 72 场算 p_draw 的 Q3（75% 分位）作为"显著高平局率"基准
-    #       is_draw_likely = (p_diff < 0.05) AND (p_d >= Q3_p_draw)
+    # v1（旧）: (p_diff<5pp AND p_d>=Q3_p_draw) → 仅 2/72 (2.8%) 命中
+    # v2（新）: 复合分 score = p_d - 0.5*p_diff，按 top-K 排名命中
+    #           K = round(N * DRAW_TARGET_RATE)，DRAW_TARGET_RATE 取历届均值
+    # 历届世界杯小组赛平局比例（32 队 48 场制）：
+    #   2002: 14/48=29% | 2006: 13/48=27% | 2010: 13/48=27%
+    #   2014:  9/48=19% | 2018: 13/48=27% | 2022: 12/48=25%
+    #   六届均值 ≈ 25.7%；2014 最低 19%（攻势足球年）
+    # 取 0.25 作为目标比例：48 队制 72 场 → 18 场，与 1998-2022 长期中位贴合
+    # 还要求 score 不能太低（兜底门槛 SCORE_FLOOR=0.10），避免悬殊场被强行入围
     # 不动 argmax / predicted_winner，只是给均势场的"补充检查"信号
     try:
-        all_draws = [m["prediction"]["p_draw"] for m in out_matches if "prediction" in m]
-        if all_draws:
-            sorted_draws = sorted(all_draws)
-            q3_p_draw = sorted_draws[int(len(sorted_draws) * 0.75)]
-            for m in out_matches:
-                p = m.get("prediction")
-                if not p:
-                    continue
+        all_preds = [m for m in out_matches if "prediction" in m]
+        if all_preds:
+            DRAW_TARGET_RATE = 0.25  # 历届世界杯小组赛平均平局比例
+            SCORE_FLOOR = 0.10       # 复合分兜底门槛（防止悬殊场强行入围）
+            # 复合分 = p_draw - 0.5 * p_diff（高 p_d + 低 p_diff 双重利好）
+            scored = []
+            for m in all_preds:
+                p = m["prediction"]
                 p_diff = abs(p["p_win_a"] - p["p_win_b"])
                 p_d = p["p_draw"]
-                p["is_draw_likely"] = bool(p_diff < 0.05 and p_d >= q3_p_draw)
+                score = p_d - 0.5 * p_diff
+                scored.append((score, p_diff, p_d, m))
+            scored.sort(key=lambda x: -x[0])
+            target_k = max(1, round(len(all_preds) * DRAW_TARGET_RATE))
+            # 找到 top-K 切点 score 同时满足兜底门槛
+            cutoff_score = scored[target_k - 1][0] if target_k <= len(scored) else -1
+            cutoff_score = max(cutoff_score, SCORE_FLOOR)
+            # 标记
+            sorted_draws = sorted([s[2] for s in scored])
+            q2_p_draw = sorted_draws[len(sorted_draws) // 2]
+            n_hit = 0
+            for score, p_diff, p_d, m in scored:
+                p = m["prediction"]
+                hit = bool(score >= cutoff_score)
+                p["is_draw_likely"] = hit
+                p["draw_score"] = round(score, 4)  # 审计字段
+                if hit:
+                    n_hit += 1
             draw_meta = {
-                "q3_p_draw": round(q3_p_draw, 4),
-                "n_draw_likely": sum(1 for m in out_matches if m.get("prediction", {}).get("is_draw_likely")),
+                "method": "composite_topk",
+                "target_rate": DRAW_TARGET_RATE,
+                "target_k": target_k,
+                "cutoff_score": round(cutoff_score, 4),
+                "score_floor": SCORE_FLOOR,
+                "median_p_draw": round(q2_p_draw, 4),
+                "n_draw_likely": n_hit,
+                "historical_basis": "WC 2002-2022 group-stage draw rate avg ~25.7%",
             }
         else:
             draw_meta = None
