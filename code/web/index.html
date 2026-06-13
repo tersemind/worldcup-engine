@@ -122,7 +122,18 @@
 <div class="grid">
 
   <div class="card full-width">
-    <h2>📊 冠军概率排名（综合预测）</h2>
+    <h2 style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      📊 冠军概率排名（综合预测）
+      <span id="champion-channel-toggle" style="font-size:0.55em;font-weight:normal;display:inline-flex;gap:4px;background:rgba(255,255,255,0.05);padding:4px;border-radius:4px;">
+        <button class="champ-ch-btn active" data-ch="base"
+          style="background:#ffd700;color:#1a1a2e;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;font-weight:bold;"
+          title="纯 MC 模拟 + 8 项 AI 修正（默认通道，最稳）">Base 通道</button>
+        <button class="champ-ch-btn" data-ch="ai_phase3"
+          style="background:rgba(74,222,128,0.15);color:#4ade80;border:1px solid rgba(74,222,128,0.4);padding:4px 10px;border-radius:3px;cursor:pointer;"
+          title="AI 加权 MC（逐场 ΔE 注入 + 分段 ELO_PER_PP）+ 8 项修正">AI 通道</button>
+      </span>
+      <span id="champion-channel-hint" style="font-size:0.5em;font-weight:normal;color:#888;"></span>
+    </h2>
     <div id="chart-champion" class="chart-tall"></div>
   </div>
 
@@ -1331,8 +1342,28 @@ async function runPath() {
 }
 
 // === 1. 冠军概率柱状图 ===
-async function renderChampion() {
-  const data = await fetchJSON('/api/synthesizer');
+// 双通道：base (纯 MC + 8 项 AI 修正) / ai_phase3 (AI 加权 MC + 8 项修正)
+let _championChannel = 'base';
+async function renderChampion(channel) {
+  if (channel) _championChannel = channel;
+  const ch = _championChannel;
+  const apiName = (ch === 'ai_phase3') ? '/api/synthesizer_ai_phase3' : '/api/synthesizer';
+  const hint = document.getElementById('champion-channel-hint');
+  let data;
+  try {
+    data = await fetchJSON(apiName);
+    if (hint) hint.textContent = (ch === 'ai_phase3')
+      ? '— AI 加权通道：逐场 ΔE 注入 + 分段 ELO_PER_PP'
+      : '— Base 通道：纯 MC + 8 项 AI 修正（默认）';
+  } catch (e) {
+    // AI 通道未生成时回退 base
+    if (ch === 'ai_phase3') {
+      if (hint) hint.textContent = '⚠️ AI 通道数据未生成（cascade 尚未刷新），已回退 Base';
+      data = await fetchJSON('/api/synthesizer');
+    } else {
+      throw e;
+    }
+  }
   const teams = Object.entries(data)
     .map(([name, d]) => ({name, ...d}))
     .sort((a, b) => b.final_probability - a.final_probability)
@@ -2175,6 +2206,28 @@ async function renderHeatmap() {
     }]
   });
 }
+
+// 冠军榜双通道切换：base / ai_phase3
+document.querySelectorAll('#champion-channel-toggle .champ-ch-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const ch = btn.getAttribute('data-ch');
+    if (ch === _championChannel) return;
+    // 视觉切换
+    document.querySelectorAll('#champion-channel-toggle .champ-ch-btn').forEach(b => {
+      const active = (b.getAttribute('data-ch') === ch);
+      b.classList.toggle('active', active);
+      if (active) {
+        b.style.background = '#ffd700'; b.style.color = '#1a1a2e';
+        b.style.fontWeight = 'bold'; b.style.border = 'none';
+      } else {
+        b.style.background = 'rgba(74,222,128,0.15)'; b.style.color = '#4ade80';
+        b.style.fontWeight = 'normal'; b.style.border = '1px solid rgba(74,222,128,0.4)';
+      }
+    });
+    try { await renderChampion(ch); }
+    catch (e) { console.error('切换通道失败:', e); }
+  });
+});
 
 // 启动
 Promise.all([

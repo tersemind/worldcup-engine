@@ -304,6 +304,7 @@ class APIHandler(SimpleHTTPRequestHandler):
         # 静态 JSON 文件
         api_to_file = {
             "synthesizer": "synthesizer_report.json",
+            "synthesizer_ai_phase3": "synthesizer_report_ai_phase3.json",
             "scenarios": "three_scenarios.json",
             "finals": "finals_matchups.json",
             "arbitrage": "arbitrage_signals.json",
@@ -500,7 +501,8 @@ def run_server(port: int = PORT, host: str = "0.0.0.0"):
     for ip in (lan_ips or []):
         print(f"     - 局域网:  http://{ip}:{port}")
     print(f"   API:")
-    print(f"     /api/synthesizer  → 综合预测")
+    print(f"     /api/synthesizer  → 综合预测（base 通道：纯 MC + 8 项 AI 修正）")
+    print(f"     /api/synthesizer_ai_phase3 → 综合预测（AI 加权 MC + 8 项修正，分段 ELO_PER_PP）")
     print(f"     /api/scenarios    → 三情景")
     print(f"     /api/finals       → 决赛对阵")
     print(f"     /api/arbitrage    → 套利信号")

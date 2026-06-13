@@ -331,8 +331,17 @@ def print_report(results: dict, top_n: int = 12):
     print(f"\n📌 所有概率 < 60% → 置信度档次：低置信度（48 队制首届赛事的固有不确定性）")
 
 
-def main(mc_file: str = "mc_simulation_n100000.json"):
-    """主入口"""
+def main(mc_file: str = "mc_simulation_n100000.json", out_file: str = "synthesizer_report.json"):
+    """主入口
+
+    参数：
+        mc_file: 输入的 MC 概率文件名（在 data/outputs/ 下）
+        out_file: 输出报告文件名（写到 data/outputs/）
+
+    双通道支持：
+        - base 通道：mc_simulation_n100000.json → synthesizer_report.json（默认）
+        - AI phase3 通道：mc_simulation_n100000_ai_phase3.json → synthesizer_report_ai_phase3.json
+    """
     mc_path = DATA_OUTPUTS / mc_file
     if not mc_path.exists():
         print(f"❌ 蒙特卡洛输出不存在：{mc_path}")
@@ -345,12 +354,13 @@ def main(mc_file: str = "mc_simulation_n100000.json"):
     results = synthesize(mc_probs)
     print_report(results, top_n=12)
     
-    save_output("synthesizer_report.json", results)
-    print(f"\n✅ 已保存到 data/outputs/synthesizer_report.json")
+    save_output(out_file, results)
+    print(f"\n✅ 已保存到 data/outputs/{out_file}")
     
     return results
 
 
 if __name__ == "__main__":
     mc_file = sys.argv[1] if len(sys.argv) > 1 else "mc_simulation_n100000.json"
-    main(mc_file)
+    out_file = sys.argv[2] if len(sys.argv) > 2 else "synthesizer_report.json"
+    main(mc_file, out_file)
