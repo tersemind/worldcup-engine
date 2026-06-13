@@ -17,9 +17,9 @@
 | 文件 | 角色 | 状态 |
 |------|------|------|
 | `live_elo_solver.py` | v1 反求公式 | ✅ S1 完成 |
-| `live_stats_features.py` | v2 ESPN summary 信号映射 | 🚧 待 S4 |
-| `market_anomaly_detector.py` | v3' Kalshi 异动检测 | 🚧 待 S5 |
-| `live_fetcher_extras.py` | ESPN summary endpoint 扩展 | 🚧 待 S3 |
+| `live_stats_features.py` | v2 ESPN summary 信号映射 | ✅ S4 完成 |
+| `market_anomaly_detector.py` | v3' Kalshi 异动检测 | ✅ S5 完成 |
+| `live_fetcher_extras.py` | ESPN summary endpoint 扩展 | ✅ S3 完成 |
 | `live_trading_loop.py` | 主调度 tick（每 60s） | ✅ S2 完成 |
 | `tick_writer.py` | 落盘工具（snapshot+jsonl） | ✅ S2 完成 |
 
@@ -65,8 +65,8 @@ live tick (60s):
 
 - [x] **S1** 模块骨架 + `live_elo_solver.py` v1（20 unit tests 全通过）
 - [x] **S2** `live_trading_loop.py` + `tick_writer.py` + scheduler 注册（端到端 mock 验证通过）
-- [ ] **S3** `live_fetcher_extras.py`（ESPN summary）
-- [ ] **S4** `live_stats_features.py`（v2 量化映射）
-- [ ] **S5** `market_anomaly_detector.py`（v3' 异动检测）
-- [ ] **S6** 前端 trading tab live banner + ⚡ 异动标记
+- [x] **S3** `live_fetcher_extras.py`（ESPN summary endpoint + 30s 缓存）
+- [x] **S4** `live_stats_features.py`（v2 量化映射 xG/possession/shots/penalty/corners，总 cap 4pp）
+- [x] **S5** `market_anomaly_detector.py`（v3' Kalshi ≥3pp 跳变检测 5min 滑窗）
+- [x] **S6** 前端 trading tab live banner + ⚡ 异动标记 + `/api/in_match_live`；tab 移到末位
 - [ ] **S7** memory 更新 + 文档完善

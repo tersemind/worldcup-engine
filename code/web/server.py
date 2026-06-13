@@ -315,6 +315,7 @@ class APIHandler(SimpleHTTPRequestHandler):
             "swarm": "swarm_consensus.json",
             "uncertainty": "uncertainty_decomposition.json",
             "in_match": "in_match_update.json",
+            "in_match_live": "in_match_live.json",
             "data_quality": "data_quality_report.json",
             "kalshi": "kalshi_match_odds.json",
         }

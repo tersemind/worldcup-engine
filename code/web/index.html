@@ -65,7 +65,6 @@
 
 <div class="tabs" style="text-align:center;margin-bottom:20px;">
   <button class="tab-btn active" data-tab="overview">📊 总览</button>
-  <button class="tab-btn" data-tab="trading">💵 交易下注</button>
   <button class="tab-btn" data-tab="groups">🅰️ 小组赛</button>
   <button class="tab-btn" data-tab="group_schedule">📅 72 场赛程</button>
   <button class="tab-btn" data-tab="r32">🎯 1/16 决赛</button>
@@ -79,6 +78,7 @@
   <button class="tab-btn" data-tab="critical_compare">🔬 AI 微调影响</button>
   <button class="tab-btn" data-tab="backtest">📈 历史回测表现</button>
   <button class="tab-btn" data-tab="timeseries">📉 概率走势</button>
+  <button class="tab-btn" data-tab="trading">💵 交易下注</button>
 </div>
 
 <style>
@@ -195,6 +195,23 @@
       ⚠️ <b>风险提示：</b>所有信号基于模型估计概率，置信度档次：低-中（&lt;60%）。
       Quarter Kelly 已是稳健折扣，但仍建议：① 单注不超总仓位 30%；② 设置止损线（-30%）；
       ③ 关注 95% CI（置信区间跨过市场价时不建议下注）；④ 决赛单场赛制随机性高，谨慎追高。
+    </div>
+
+    <!-- 实时 Live Banner（无 live 时整块隐藏） -->
+    <div id="live-banner" style="display:none;background:linear-gradient(135deg,#3a1a1a 0%,#2a1010 100%);
+                                  border:1px solid #ef4444;border-radius:8px;padding:14px 18px;margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px">
+        <div>
+          <span style="color:#ef4444;font-weight:bold;font-size:14px">🔴 LIVE · 量化高频通道</span>
+          <span id="live-banner-meta" style="color:#aaa;font-size:12px;margin-left:10px"></span>
+        </div>
+        <div style="font-size:11px;color:#666">
+          每 60s 自动 tick · v1 硬事实 + v2 ESPN 统计 + v3' 市场异动
+          · <a href="/api/in_match_live" target="_blank" style="color:#666">/api/in_match_live</a>
+        </div>
+      </div>
+      <div id="live-matches-block" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px"></div>
+      <div id="live-anomalies-block" style="font-size:12px;color:#fbbf24"></div>
     </div>
 
     <!-- 市场切换 tab -->
@@ -2720,7 +2737,8 @@ Promise.all([
   renderArbitrageKalshi(),
   renderKalshi(),
   renderBacktest(),
-  renderHeatmap()
+  renderHeatmap(),
+  (typeof renderLiveBanner === 'function' ? renderLiveBanner() : Promise.resolve())
 ]).catch(e => console.error('加载失败:', e));
 
 // ── 调度仪表盘动态刷新：60s 轮询 + 倒计时 + 上次刷新指示
@@ -2746,6 +2764,67 @@ function _updateSchedRefreshBadge() {
   els.forEach(el => { el.innerHTML = text; el.style.color = color; });
 }
 
+// quant live banner：尝试拉 /api/in_match_live；无 live 时整块隐藏，错误时静默不报红
+async function renderLiveBanner() {
+  const banner = document.getElementById('live-banner');
+  if (!banner) return;
+  let data = null;
+  try {
+    const r = await fetch('/api/in_match_live', { cache: 'no-store' });
+    if (!r.ok) { banner.style.display = 'none'; return; }
+    data = await r.json();
+  } catch (e) {
+    banner.style.display = 'none';
+    return;
+  }
+  const matches = (data && data.live_predictions) || [];
+  const anomalies = (data && data.market_anomalies) || [];
+  if (matches.length === 0 && anomalies.length === 0) {
+    banner.style.display = 'none';
+    return;
+  }
+  banner.style.display = 'block';
+  const ts = data.ts || '';
+  const elapsed = data.elapsed_sec != null ? `${data.elapsed_sec}s` : '?';
+  const meta = `tick @ ${ts} · 耗时 ${elapsed} · 活动场次 ${matches.length} · 异动 ${anomalies.length}`;
+  const metaEl = document.getElementById('live-banner-meta');
+  if (metaEl) metaEl.textContent = meta;
+
+  // 比赛卡片
+  const block = document.getElementById('live-matches-block');
+  if (block) {
+    block.innerHTML = matches.map(m => {
+      const score = `${m.score_a ?? '-'}-${m.score_b ?? '-'}`;
+      const min = m.elapsed_min != null ? `${m.elapsed_min}'` : '';
+      const v1 = m.p_win_a != null ? `v1: ${(m.p_win_a*100).toFixed(0)}/${(m.p_draw*100).toFixed(0)}/${(m.p_win_b*100).toFixed(0)}%` : '';
+      const v12 = m.p_win_a_v1plus_v2 != null
+        ? ` → v1+v2: ${(m.p_win_a_v1plus_v2*100).toFixed(0)}/${(m.p_draw_v1plus_v2*100).toFixed(0)}/${(m.p_win_b_v1plus_v2*100).toFixed(0)}%`
+        : '';
+      const v2pp = m.v2 && m.v2.delta_pp_a != null ? ` (v2 Δ${m.v2.delta_pp_a>=0?'+':''}${m.v2.delta_pp_a.toFixed(2)}pp)` : '';
+      return `
+        <div style="background:rgba(0,0,0,0.4);border:1px solid #444;border-radius:6px;padding:10px 14px;min-width:240px;flex:1">
+          <div style="font-weight:bold;color:#fff;margin-bottom:4px">${m.team_a||'?'} <span style="color:#10b981">${score}</span> ${m.team_b||'?'} <span style="color:#888;font-size:12px;margin-left:6px">${min}</span></div>
+          <div style="font-size:11px;color:#aaa">${v1}${v12}${v2pp}</div>
+        </div>`;
+    }).join('');
+  }
+
+  // 异动行
+  const anomBlock = document.getElementById('live-anomalies-block');
+  if (anomBlock) {
+    if (anomalies.length === 0) {
+      anomBlock.innerHTML = '';
+    } else {
+      const top = anomalies.slice(0, 5).map(a => {
+        const sign = a.delta_pp >= 0 ? '+' : '';
+        return `⚡ <b>${a.event_ticker}</b> · <code>${a.leg}</code>: ${a.prev_pp.toFixed(1)} → ${a.now_pp.toFixed(1)} pp (Δ${sign}${a.delta_pp.toFixed(1)}pp · ${Math.round(a.window_sec)}s)`;
+      }).join(' · ');
+      const more = anomalies.length > 5 ? ` · +${anomalies.length-5} 更多` : '';
+      anomBlock.innerHTML = top + more;
+    }
+  }
+}
+
 async function _doSchedRefresh() {
   if (_schedRefreshing) return;
   _schedRefreshing = true;
@@ -2755,7 +2834,8 @@ async function _doSchedRefresh() {
       renderSchedulerDashboard().catch(e => console.warn('刷新调度仪表盘失败:', e)),
       renderArbitrage().catch(e => console.warn('刷新夺冠盘套利失败:', e)),
       renderArbitrageKalshi().catch(e => console.warn('刷新 Kalshi 套利失败:', e)),
-      renderKalshi().catch(e => console.warn('刷新 Kalshi 单场赔率失败:', e))
+      renderKalshi().catch(e => console.warn('刷新 Kalshi 单场赔率失败:', e)),
+      renderLiveBanner().catch(e => console.warn('刷新 live banner 失败:', e))
     ]);
     _schedLastRefresh = Date.now();
   } finally {
