@@ -849,7 +849,13 @@ def _quick_match_preview(team_a: str, team_b: str,
         return {"error": f"unknown team: {team_a if not ta else team_b}"}
     
     # ===== B 方案：注入 synth 球队级调整 =====
-    PP_TO_ELO = 6.0
+    # PP_TO_ELO：把"夺冠级 pp"换算成单场 ELO 偏移
+    # 6.0 → 10.0 (2026-06-13)：对齐反求侧 ELO_PER_PP_MID=10.0
+    # 起因：Canada vs Bosnia 三档实测发现 health=-2pp 单场只压 0.59pp（base），
+    # 远低于用户期望。原因之一是 preview 侧 PP_TO_ELO=6 跟反求侧 10 不一致，
+    # 让 4-adj 在单场预测里被砍掉 40%。
+    # 仅影响 preview 路径（小组赛 schedule、淘汰赛 preview），不动 mc baseline。
+    PP_TO_ELO = 10.0
     
     synth = _load_synth(channel)
     synth_a = synth.get(team_a, {})
@@ -867,10 +873,13 @@ def _quick_match_preview(team_a: str, team_b: str,
     ta_adj["elo"] = ta["elo"] + adj_a_pp * PP_TO_ELO
     tb_adj["elo"] = tb["elo"] + adj_b_pp * PP_TO_ELO
     
-    sv_a = synth_a.get("adj_squad_value", 0)
-    sv_b = synth_b.get("adj_squad_value", 0)
-    ta_adj["xg_for"] = ta["xg_for"] * (1 + sv_a / 100.0)
-    tb_adj["xg_for"] = tb["xg_for"] * (1 + sv_b / 100.0)
+    # xg_for 缩放：之前只用 adj_squad_value
+    # 2026-06-13 修复：让 adj_health/context/psych 也按等价 pp 缩放 xg_for，
+    # 这样 (elo_p + poi)/2 集成里 Poisson 半边也能感受到伤病/上下文/心理信号，
+    # 不再被砍半。与 phase3 路径用 ΔE/PP_TO_ELO 注入 xg 的逻辑保持一致。
+    # 起因：Canada vs Bosnia health=-2pp 单场只压 0.59pp，远低于用户期望。
+    ta_adj["xg_for"] = ta["xg_for"] * (1 + adj_a_pp / 100.0)
+    tb_adj["xg_for"] = tb["xg_for"] * (1 + adj_b_pp / 100.0)
 
     # ===== phase3 注入：A 方案（队级+场级 ΔE）=====
     # 注：base 的 4 项 adj 已在上面叠加；phase3 在此基础上再叠加 ai_weighted_baseline
