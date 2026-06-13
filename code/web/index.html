@@ -2116,14 +2116,15 @@ function _setupArbTabs() {
   tabKalshi.addEventListener('click', () => setActive('kalshi'));
 }
 
-// === 4b. Kalshi 单场赔率（H/D/A）===
+// === 4b. Kalshi 单场赔率（H/D/A）—— 与套利信号表同构（每场拆 3 行）===
 async function renderKalshi() {
   let d;
   try {
-    d = await fetchJSON('/api/kalshi');
+    d = await fetchJSON('/api/arbitrage_kalshi?all=1');
   } catch (e) {
     document.getElementById('kalshi-table').innerHTML =
-      `<div style="color:#ef4444">/api/kalshi 加载失败: ${e.message}</div>`;
+      `<div style="color:#ef4444">/api/arbitrage_kalshi?all=1 加载失败: ${e.message}<br>
+       <small>需要 match_bias.json + kalshi_match_odds.json 都存在，cascade 跑完后会自动生成</small></div>`;
     return;
   }
   // 预热赛程索引，便于换算北京时间
@@ -2131,65 +2132,125 @@ async function renderKalshi() {
 
   const mk = d.market || {};
   const seriesUrl = mk.series_url || 'https://kalshi.com/markets/kxwcgame';
+  const fr = d._freshness || {};
   const metaEl = document.getElementById('kalshi-market-meta');
   if (metaEl) {
     metaEl.innerHTML = `· 市场：<a href="${seriesUrl}" target="_blank" rel="noopener" style="color:#3b82f6">${mk.name || 'Single Game Winner'} @ ${mk.venue || 'Kalshi'} ↗</a>` +
       (mk.note ? ` <span title="${mk.note}" style="cursor:help">ⓘ</span>` : '') +
-      ` · 共 ${d.n_matches} 场 · 刷新于 ${d._fetched_at ? d._fetched_at.replace('T', ' ') : '?'}`;
+      ` · 共 ${d.n_signals || 0} 个方向（H/D/A）` +
+      (fr.refreshed_at ? ` · 刷新于 ${fr.refreshed_at.replace('T', ' ')}` : '');
   }
 
-  // 按日期分组，仅显示未来 + 今天的比赛（已结束的可折叠）
+  const signals = d.signals || [];
+  if (signals.length === 0) {
+    document.getElementById('kalshi-table').innerHTML =
+      `<div style="color:#888;padding:10px">暂无单场赔率数据</div>`;
+    return;
+  }
+
+  // 排序：先按日期 → 比赛 → side(home/draw/away)
+  const sideOrder = { home: 0, draw: 1, away: 2 };
+  const sorted = signals.slice().sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    const ka = `${a.team_a}|${a.team_b}`, kb = `${b.team_a}|${b.team_b}`;
+    if (ka !== kb) return ka.localeCompare(kb);
+    return (sideOrder[a.side] ?? 9) - (sideOrder[b.side] ?? 9);
+  });
+
+  // 按日期切未来/已过
   const today = new Date().toISOString().slice(0, 10);
-  const upcoming = d.matches.filter(m => m.date >= today);
-  const past = d.matches.filter(m => m.date < today);
+  const upcoming = sorted.filter(s => s.date >= today);
+  const past = sorted.filter(s => s.date < today);
 
-  const renderRow = (m) => {
-    const pA = (m.kalshi_p_win_a * 100).toFixed(0);
-    const pD = (m.kalshi_p_draw * 100).toFixed(0);
-    const pB = (m.kalshi_p_win_b * 100).toFixed(0);
-    // 找出最高概率项加粗
-    const probs = [m.kalshi_p_win_a, m.kalshi_p_draw, m.kalshi_p_win_b];
-    const maxIdx = probs.indexOf(Math.max(...probs));
-    const wrap = (text, isMax) => isMax ? `<b style="color:#10b981">${text}</b>` : text;
-    const vol = m.total_volume_24h ? `$${(m.total_volume_24h / 1000).toFixed(0)}k` : '-';
-    const overround = m.raw_overround_pct;
-    const overroundColor = overround > 5 ? '#ef4444' : overround < -10 ? '#f59e0b' : '#888';
+  // 上一行的 (date,match) 用于 rowspan 风格的合并显示
+  let _lastKey = null;
+  const renderRow = (s) => {
+    const matchKey = `${s.date}|${s.team_a}|${s.team_b}`;
+    const isFirstOfMatch = matchKey !== _lastKey;
+    _lastKey = matchKey;
 
-    // 联表查 time_local/tz 换算北京时间（无匹配时回落到原 date）
-    const _ko = lookupKickoff(m.team_a, m.team_b, m.date);
-    let _bjCell = m.date, _bjTip = '';
+    const gradeClass = s.grade === 'S' || s.grade === 'A' ? 'grade-a' :
+                       s.grade === 'B' ? 'grade-b' :
+                       s.grade === 'C' ? 'grade-c' : '';
+    const gradeCell = s.grade && s.grade !== '-' ?
+      `<span class="${gradeClass}">${s.grade}</span>` :
+      `<span style="color:#666">-</span>`;
+
+    // edge 着色：BUY=绿 / SELL=红 / NEUTRAL=灰
+    const edgeStyle = s.type === 'BUY' ? 'color:#10b981;font-weight:600' :
+                      s.type === 'SELL' ? 'color:#ef4444' :
+                      'color:#888';
+    const evStyle = s.ev_pct > 0 ? 'color:#10b981' :
+                    s.ev_pct < 0 ? 'color:#ef4444' : 'color:#888';
+    const sign = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
+
+    let sideLabel = s.side_label || '';
+    sideLabel = sideLabel.replace(s.team_a, zh(s.team_a)).replace(s.team_b, zh(s.team_b));
+
+    // 联表查 time_local/tz 换算北京时间
+    const _ko = lookupKickoff(s.team_a, s.team_b, s.date);
+    let _bjCell = s.date, _bjTip = '';
     if (_ko && _ko.time_local) {
-      const _bj = toBeijingTime(m.date, _ko.time_local, _ko.tz);
+      const _bj = toBeijingTime(s.date, _ko.time_local, _ko.tz);
       _bjCell = `${_bj.date} ${_bj.time}`;
       _bjTip = ` title="场地当地：${_bj.raw}"`;
     }
+
+    // 同场次第二/三行的日期与比赛列淡化
+    const dateCell = isFirstOfMatch
+      ? `<td style="color:#888;font-size:11px"${_bjTip}>${_bjCell}</td>`
+      : `<td style="color:#444;font-size:11px"${_bjTip}>${_bjCell}</td>`;
+    const matchCell = isFirstOfMatch
+      ? `<td><b>${zh(s.team_a)}</b> vs <b>${zh(s.team_b)}</b></td>`
+      : `<td style="color:#666">${zh(s.team_a)} vs ${zh(s.team_b)}</td>`;
+
+    const betCell = s.suggested_bet > 0 ?
+      `$${s.suggested_bet.toFixed(0)}` :
+      `<span style="color:#666">-</span>`;
+    const linkColor = s.type === 'BUY' ? '#10b981' :
+                      s.type === 'SELL' ? '#888' : '#888';
+    const linkLabel = s.type === 'BUY' ? '下注 ↗' :
+                      s.type === 'SELL' ? '查看 ↗' : '查看 ↗';
+
     return `<tr>
-      <td style="color:#888;font-size:11px"${_bjTip}>${_bjCell}</td>
-      <td><b>${zh(m.team_a)}</b></td>
-      <td style="text-align:center">${wrap(pA + '%', maxIdx === 0)}</td>
-      <td style="text-align:center;color:#888">${wrap(pD + '%', maxIdx === 1)}</td>
-      <td style="text-align:center">${wrap(pB + '%', maxIdx === 2)}</td>
-      <td><b>${zh(m.team_b)}</b></td>
-      <td style="text-align:right;font-size:11px">${vol}</td>
-      <td style="text-align:right;font-size:11px;color:${overroundColor}">${overround >= 0 ? '+' : ''}${overround.toFixed(1)}%</td>
+      <td>${gradeCell}</td>
+      ${dateCell}
+      ${matchCell}
+      <td>${sideLabel}</td>
+      <td style="text-align:right">${s.model_prob.toFixed(1)}%</td>
+      <td style="text-align:right">${s.market_prob.toFixed(1)}%</td>
+      <td style="text-align:right;${edgeStyle}">${sign(s.edge_pp)}pp</td>
+      <td style="text-align:right">${s.decimal_odds ? s.decimal_odds.toFixed(2) + 'x' : '-'}</td>
+      <td style="text-align:right;${evStyle}">${sign(s.ev_pct)}%</td>
+      <td style="text-align:right">${betCell}</td>
       <td style="text-align:center">
-        <a href="${m.kalshi_url}" target="_blank" rel="noopener"
-           title="到 Kalshi 下注 ${zh(m.team_a)} vs ${zh(m.team_b)}"
-           style="color:#10b981;font-weight:600;text-decoration:none">下注 ↗</a>
+        <a href="${s.market_url}" target="_blank" rel="noopener"
+           title="到 Kalshi ${zh(s.team_a)} vs ${zh(s.team_b)} - ${sideLabel}"
+           style="color:${linkColor};font-weight:600;text-decoration:none">${linkLabel}</a>
       </td>
     </tr>`;
   };
 
   const tableHead = `<thead><tr>
-    <th title="北京时间（鼠标悬停看场地当地时间）">日期 (北京)</th><th>主队</th><th>主胜</th><th>平</th><th>客胜</th><th>客队</th>
-    <th style="text-align:right">24h 量</th><th style="text-align:right">overround</th><th>入口</th>
+    <th>Grade</th>
+    <th title="北京时间（鼠标悬停看场地当地时间）">日期 (北京)</th>
+    <th>比赛</th>
+    <th>方向</th>
+    <th style="text-align:right">模型%</th>
+    <th style="text-align:right">市场%</th>
+    <th style="text-align:right">Edge</th>
+    <th style="text-align:right">赔率</th>
+    <th style="text-align:right">EV%</th>
+    <th style="text-align:right">建议下注</th>
+    <th>入口</th>
   </tr></thead>`;
 
   let html = `<div style="font-size:11px;color:#888;margin-bottom:6px">
-    每行 = 一场比赛 3 个独立 Yes/No 合约（主胜/平/客胜）；overround 为庄家抽水（理论 ~0%，正值=抽水，负值=暂时套利窗口）
+    每场拆 3 行（主胜 / 平 / 客胜）；指标与"单场套利信号"一致：Edge=模型%-市场%，EV%=Kelly 期望收益率，BUY/SELL 阈值 ±3pp，NEUTRAL 为灰色
   </div>`;
 
   if (upcoming.length > 0) {
+    _lastKey = null;
     html += `<table>${tableHead}<tbody>`;
     html += upcoming.map(renderRow).join('');
     html += '</tbody></table>';
@@ -2198,11 +2259,11 @@ async function renderKalshi() {
   }
 
   if (past.length > 0) {
+    _lastKey = null;
+    const pastRows = past.map(renderRow).join('');
     html += `<details style="margin-top:12px"><summary style="cursor:pointer;color:#888;font-size:12px">
-      ▶ 已结束 ${past.length} 场（点击展开）</summary>
-      <table style="margin-top:8px;opacity:0.7">${tableHead}<tbody>`;
-    html += past.map(renderRow).join('');
-    html += '</tbody></table></details>';
+      ▶ 已结束 ${past.length} 行（点击展开）</summary>
+      <table style="margin-top:8px;opacity:0.7">${tableHead}<tbody>${pastRows}</tbody></table></details>`;
   }
 
   document.getElementById('kalshi-table').innerHTML = html;

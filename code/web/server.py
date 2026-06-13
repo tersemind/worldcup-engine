@@ -346,6 +346,35 @@ class APIHandler(SimpleHTTPRequestHandler):
             }, status=404)
             return
 
+        # arbitrage_kalshi?all=1 → 即时生成全量信号（不过滤 min_edge），
+        # 用于"全部场次单场赔率"展示，与套利信号表共享指标体系
+        if api_name == "arbitrage_kalshi" and query.get("all", ["0"])[0] in ("1", "true"):
+            try:
+                sys.path.insert(0, str(Path(__file__).parent.parent))
+                from models.arbitrage_kalshi import generate_kalshi_signals
+                signals = generate_kalshi_signals(
+                    bankroll=10000, min_edge_pp=0.0, future_only=True
+                )
+                # 复用静态文件里的 market / _freshness 元数据（如有）
+                meta = {}
+                static_path = DATA_OUTPUTS / api_to_file[api_name]
+                if static_path.exists():
+                    with open(static_path, "r") as f:
+                        static_data = json.load(f)
+                    meta = {
+                        "market": static_data.get("market", {}),
+                        "_freshness": static_data.get("_freshness", {}),
+                    }
+                self._send_json({
+                    "n_signals": len(signals),
+                    "signals": signals,
+                    **meta,
+                })
+                return
+            except Exception as e:
+                self._send_json({"error": f"arbitrage_kalshi all=1 failed: {e}"}, status=500)
+                return
+
         file_path = DATA_OUTPUTS / api_to_file[api_name]
         if not file_path.exists():
             self._send_json({"error": f"Data not found: {file_path.name}"}, status=404)

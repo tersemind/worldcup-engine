@@ -39,14 +39,20 @@ def _build_signal(event_ticker: str, date: str, team_a: str, team_b: str,
         return None
 
     edge = edge_score(model_p, market_p)
-    if abs(edge) < min_edge_pp:
+    # min_edge_pp=0 时不过滤，全量返回（用于"全部场次单场赔率"展示）
+    # 信号 type 仍按 |edge| 与默认 BUY/SELL 阈值（3pp）判定
+    if min_edge_pp > 0 and abs(edge) < min_edge_pp:
         return None
 
     decimal_odds = implied_to_decimal_odds(market_p)
     ev = expected_value(model_p, decimal_odds)
     kelly = kelly_fraction(model_p, decimal_odds, kelly_multiplier=0.25)
     grade = confidence_grade(edge, model_p)
-    signal_type = "BUY" if edge > 0 else "SELL"
+    # NEUTRAL：|edge| < 3pp（默认 BUY/SELL 阈值）
+    if abs(edge) < 3.0:
+        signal_type = "NEUTRAL"
+    else:
+        signal_type = "BUY" if edge > 0 else "SELL"
 
     return {
         "event_ticker": event_ticker,
