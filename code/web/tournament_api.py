@@ -891,16 +891,35 @@ def _quick_match_preview(team_a: str, team_b: str,
     # 修复：同步把 ΔE 换算回 pp 后注入 xg_for（与 base 的 adj_squad_value 路径一致）。
     phase3_delta_a = 0.0
     phase3_delta_b = 0.0
+    llm_boost_extra_a = 0.0
+    llm_boost_extra_b = 0.0
     if _resolve_channel(channel) == "ai_phase3":
         phase3_delta_a, phase3_delta_b = _phase3_match_delta(team_a, team_b)
         ta_adj["elo"] += phase3_delta_a
         tb_adj["elo"] += phase3_delta_b
-        # ΔE 同步注入 xg：ELO_per_pp=6 → 等效 pp = ΔE/6；与 adj_squad_value 同一个 xg 缩放公式
+        # ΔE 同步注入 xg：等效 pp = ΔE/PP_TO_ELO；与 adj_squad_value 同一个 xg 缩放公式
         # 与 base 路径保持一致：仅缩放 xg_for（不动 xg_against），避免双倍效应破坏标定
         equiv_pp_a = phase3_delta_a / PP_TO_ELO
         equiv_pp_b = phase3_delta_b / PP_TO_ELO
         ta_adj["xg_for"] *= (1 + equiv_pp_a / 100.0)
         tb_adj["xg_for"] *= (1 + equiv_pp_b / 100.0)
+        
+        # ===== 方案乙：phase3 通道 LLM 放大层（2026-06-13）=====
+        # 起因：phase3 ΔE 来自 mc baseline 反求，对弱队夺冠 pp 极小 → ΔE 不够看
+        # 用户："LLM 特征整体权重感觉较低，伤病/天气在 base/AI 通道差异变化很小"
+        # 修法：phase3 通道在 base 4-adj 之上 **额外** 叠 (LLM_BOOST-1) 倍 4-adj
+        # 等效效果：phase3 通道相当于把 base 的 LLM 信号放大到 LLM_BOOST 倍
+        # 代价：phase3 preview 与 phase3 mc baseline 偏离（synth_ai_phase3 MAE 会涨）
+        #       但 preview 与 mc 本来就走不同口径（小组赛/淘汰赛 preview vs 冠军榜 mc）
+        #       参考 project_worldcup_data_pipeline_split：分裂在设计预期内
+        LLM_BOOST = 2.0
+        boost_factor = LLM_BOOST - 1.0  # 额外叠加倍数（base 已叠 1 倍）
+        llm_boost_extra_a = adj_a_pp * boost_factor * PP_TO_ELO
+        llm_boost_extra_b = adj_b_pp * boost_factor * PP_TO_ELO
+        ta_adj["elo"] += llm_boost_extra_a
+        tb_adj["elo"] += llm_boost_extra_b
+        ta_adj["xg_for"] *= (1 + adj_a_pp * boost_factor / 100.0)
+        tb_adj["xg_for"] *= (1 + adj_b_pp * boost_factor / 100.0)
 
     # ===== B+ 方案：主场加成 =====
     # 60 Elo ≈ +8-10pp 单场胜率（参考 LLM 分析"USA 主场优势通常值 10-15%"下限）
@@ -1011,12 +1030,14 @@ def _quick_match_preview(team_a: str, team_b: str,
         "winner_confidence_pct": round(win_conf * 100, 1),
         "top_scorelines": top_scores,
         "score_model": poi.get("model"),
-        # phase3 通道增量：A 方案 ΔE 注入审计（base 通道时全 0）
+        # phase3 通道增量：A 方案 ΔE + 方案乙 LLM_BOOST 注入审计（base 通道时全 0）
         "phase3_adjustment": {
             "channel": _resolve_channel(channel),
             f"{team_a}_delta_elo": round(phase3_delta_a, 1),
             f"{team_b}_delta_elo": round(phase3_delta_b, 1),
-            "source": "ai_weighted_baseline.compute_match_level_shifts_segmented",
+            f"{team_a}_llm_boost_extra_elo": round(llm_boost_extra_a, 1),
+            f"{team_b}_llm_boost_extra_elo": round(llm_boost_extra_b, 1),
+            "source": "ai_weighted_baseline.compute_match_level_shifts_segmented + LLM_BOOST=2.0",
         },
         # B 方案：synth 球队级调整审计字段
         "synth_adjustment": {
