@@ -717,8 +717,10 @@ async function renderGroupSchedule() {
       const k = p.forecast_format || {};
       const winner = isPlayed ? m.actual_result.winner : p.predicted_winner;
       const isTossUp = !isPlayed && p.is_toss_up;
-      const aCls = isTossUp ? '' : (winner === m.team_a ? 'winner' : (winner === m.team_b ? 'loser' : ''));
-      const bCls = isTossUp ? '' : (winner === m.team_b ? 'winner' : (winner === m.team_a ? 'loser' : ''));
+      const isDrawLikely = !isPlayed && p.is_draw_likely;
+      const isUndecided = isTossUp || isDrawLikely;
+      const aCls = isUndecided ? '' : (winner === m.team_a ? 'winner' : (winner === m.team_b ? 'loser' : ''));
+      const bCls = isUndecided ? '' : (winner === m.team_b ? 'winner' : (winner === m.team_a ? 'loser' : ''));
 
       let scoreCell;
       if (isPlayed) {
@@ -778,7 +780,9 @@ async function renderGroupSchedule() {
         ? '<span style="color:#4ade80">✅ 已结束</span>'
         : (isTossUp
             ? '<span style="color:#fb923c" title="主胜与客胜差距 < 5pp 且平局率高">⚖ 势均力敌</span>'
-            : '<span style="color:#fbbf24">🕒 未开始</span>');
+            : (isDrawLikely
+                ? '<span style="color:#a78bfa" title="主客差距 < 5pp 且平局率位于全部场次 Q3 以上：平局是真候选">🤝 平局候选</span>'
+                : '<span style="color:#fbbf24">🕒 未开始</span>'));
 
       const predOpacity = isPlayed ? 'opacity:0.55' : '';
 
@@ -789,12 +793,13 @@ async function renderGroupSchedule() {
       const injA = m.team_a_injuries;
       const injB = m.team_b_injuries;
       const hasInjuries = !!(injA || injB);
-      const expandable = showLlm || hasInjuries;
+      const expandable = showLlm || hasInjuries || isDrawLikely;
       const cursor = expandable ? 'cursor:pointer' : '';
       const onclick = expandable ? `onclick="document.getElementById('${detailId}').style.display = document.getElementById('${detailId}').style.display==='none'?'table-row':'none'"` : '';
       const expandHintParts = [];
       if (showLlm) expandHintParts.push('<span style="color:#4ade80" title="模型 vs 市场胜方分歧">▾LLM</span>');
       if (hasInjuries) expandHintParts.push('<span style="color:#f87171" title="存在伤病">▾伤</span>');
+      if (isDrawLikely) expandHintParts.push('<span style="color:#a78bfa" title="平局是真候选">▾平</span>');
       const expandHint = expandHintParts.length ? `<span style="font-size:0.7em;margin-left:4px">${expandHintParts.join(' ')}</span>` : '';
       
       // 伤病徽章构造（球队名后追加）
@@ -912,8 +917,24 @@ async function renderGroupSchedule() {
           </div>`;
         }
         
+        // ─── 平局候选块（is_draw_likely 触发，独立于 LLM 终审）───
+        let drawBlock = '';
+        if (isDrawLikely) {
+          const pa = (p.p_win_a*100).toFixed(1);
+          const pd = (p.p_draw*100).toFixed(1);
+          const pb = (p.p_win_b*100).toFixed(1);
+          const diff = Math.abs(p.p_win_a - p.p_win_b)*100;
+          drawBlock = `<div style="margin-bottom:12px;padding:10px 14px;border-left:3px solid #a78bfa;background:rgba(167,139,250,0.08)">
+            <div style="color:#a78bfa;font-weight:bold;margin-bottom:4px">🤝 平局候选场</div>
+            <div style="color:#ddd;font-size:0.9em;line-height:1.5">
+              主胜 ${pa}% / 平 ${pd}% / 客胜 ${pb}%，主客差距仅 ${diff.toFixed(1)}pp 且平局率位于全 72 场 Q3 以上。
+              <br>建议覆盖「${zhShort(m.team_a)} 胜 + 平」或「${zhShort(m.team_b)} 胜 + 平」双注，单押风险高。
+            </div>
+          </div>`;
+        }
         html += `<tr id="${detailId}" style="display:none;background:rgba(255,255,255,0.04)">
           <td colspan="13" style="padding:14px 22px">
+            ${drawBlock}
             ${llmBlock}
             ${injBlock}
           </td>

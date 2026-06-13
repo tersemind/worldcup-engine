@@ -1238,15 +1238,45 @@ def api_group_schedule(channel: Optional[str] = None) -> Dict[str, Any]:
         
         out_matches.append(entry)
     
+    # ===== 平局场决标记（2026-06-13 方案丙）=====
+    # 起因：is_toss_up 阈值 (p_diff<5pp AND p_d>p_main-5pp) 太严，72 场命中 0
+    # Poisson+ELO 集成天然把 p_draw 压在 26-28%，永远不会是 argmax
+    # 修法：跨 72 场算 p_draw 的 Q3（75% 分位）作为"显著高平局率"基准
+    #       is_draw_likely = (p_diff < 0.05) AND (p_d >= Q3_p_draw)
+    # 不动 argmax / predicted_winner，只是给均势场的"补充检查"信号
+    try:
+        all_draws = [m["prediction"]["p_draw"] for m in out_matches if "prediction" in m]
+        if all_draws:
+            sorted_draws = sorted(all_draws)
+            q3_p_draw = sorted_draws[int(len(sorted_draws) * 0.75)]
+            for m in out_matches:
+                p = m.get("prediction")
+                if not p:
+                    continue
+                p_diff = abs(p["p_win_a"] - p["p_win_b"])
+                p_d = p["p_draw"]
+                p["is_draw_likely"] = bool(p_diff < 0.05 and p_d >= q3_p_draw)
+            draw_meta = {
+                "q3_p_draw": round(q3_p_draw, 4),
+                "n_draw_likely": sum(1 for m in out_matches if m.get("prediction", {}).get("is_draw_likely")),
+            }
+        else:
+            draw_meta = None
+    except Exception:
+        draw_meta = None  # 失败回退，不影响主流程
+    
     # 统计
     n_played = sum(1 for m in out_matches if m["status"] == "played")
     
-    return {
+    out = {
         "n_matches": len(out_matches),
         "n_played": n_played,
         "n_scheduled": len(out_matches) - n_played,
         "matches": out_matches,
     }
+    if draw_meta:
+        out["draw_meta"] = draw_meta
+    return out
 
 
 def api_critical_compare() -> Dict[str, Any]:
