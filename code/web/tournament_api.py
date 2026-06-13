@@ -170,15 +170,21 @@ def _ca_lookup(round_name: str, match_id: int) -> Optional[Dict]:
     return ca.get("adjustments", {}).get(key)
 
 
-def _load_most_likely():
-    """加载方案 B 的「MC 最可能剧本」数据"""
+def _load_most_likely(channel: Optional[str] = None):
+    """加载方案 B 的「MC 最可能剧本」数据。
+    channel="ai_phase3" 时优先读 phase3 派生文件，缺失自动回退 base。"""
+    ch = _resolve_channel(channel)
+    if ch == "ai_phase3":
+        p = DATA_OUTPUTS / "most_likely_bracket_ai_phase3.json"
+        if p.exists():
+            return json.load(open(p))
     p = DATA_OUTPUTS / "most_likely_bracket.json"
     return json.load(open(p)) if p.exists() else None
 
 
-def _ml_lookup(round_name: str, match_id: int) -> Optional[Dict]:
+def _ml_lookup(round_name: str, match_id: int, channel: Optional[str] = None) -> Optional[Dict]:
     """从最可能剧本里查某场比赛的 (team_a, team_b, winner, prob_pct)"""
-    ml = _load_most_likely()
+    ml = _load_most_likely(channel)
     if not ml:
         return None
     rounds = ml.get("rounds", {})
@@ -323,7 +329,7 @@ def api_r32(channel: Optional[str] = None) -> Dict[str, Any]:
     for m in bracket.get("round_of_32", []):
         mid = m["match"]
         # 方案 B 优先：用 MC 最可能对阵覆盖 slot 解析结果
-        ml_entry = _ml_lookup("r32", mid)
+        ml_entry = _ml_lookup("r32", mid, channel=channel)
         if ml_entry:
             ta, tb = ml_entry["team_a"], ml_entry["team_b"]
         else:
@@ -351,7 +357,8 @@ def api_r32(channel: Optional[str] = None) -> Dict[str, Any]:
         "teams": r32_teams,
         "n_matches": len(r32_matches),
         "matches": r32_matches,
-        "method": "MC 最可能剧本（方案 B）" if _load_most_likely() else "小组赛预测出线 → slot 解析",
+        "method": ("MC 最可能剧本（方案 B/" + _resolve_channel(channel) + "）"
+                   if _load_most_likely(channel) else "小组赛预测出线 → slot 解析"),
     }
 
 
@@ -456,16 +463,16 @@ def _build_round_from_most_likely(round_name: str, bracket_pairings: List[Dict],
     
     返回 None 表示数据缺失，调用方应回退到贪心传播。
 
-    channel：透传给 preview 子调用（most_likely_bracket 本身仅 base 通道）。
+    channel：同时影响"读哪份 most_likely 剧本"和"preview 走哪个 synth"。
     """
-    ml = _load_most_likely()
+    ml = _load_most_likely(channel)
     if not ml:
         return None
     
     matches = []
     for p in bracket_pairings:
         mid = p[id_field]
-        ml_entry = _ml_lookup(round_name, mid)
+        ml_entry = _ml_lookup(round_name, mid, channel=channel)
         if not ml_entry:
             return None  # 数据不完整，整体回退
         ta = ml_entry["team_a"]
@@ -528,7 +535,8 @@ def api_r16(channel: Optional[str] = None) -> Dict[str, Any]:
         "teams": sorted(teams_in_r16),
         "n_matches": len(r16_matches),
         "matches": r16_matches,
-        "method": "MC 最可能剧本（方案 B）" if _load_most_likely() else "贪心 Top-1 传播",
+        "method": ("MC 最可能剧本（方案 B/" + _resolve_channel(channel) + "）"
+                   if _load_most_likely(channel) else "贪心 Top-1 传播"),
     }
 
 
@@ -562,7 +570,8 @@ def api_qf(channel: Optional[str] = None) -> Dict[str, Any]:
                        for t in (m.get("team_a"), m.get("team_b")) if t})
     return {"n_teams": len(teams_in), "teams": teams_in,
             "n_matches": len(qf_matches), "matches": qf_matches,
-            "method": "MC 最可能剧本（方案 B）" if _load_most_likely() else "贪心 Top-1 传播"}
+            "method": ("MC 最可能剧本（方案 B/" + _resolve_channel(channel) + "）"
+                       if _load_most_likely(channel) else "贪心 Top-1 传播")}
 
 
 def api_sf(channel: Optional[str] = None) -> Dict[str, Any]:
@@ -595,7 +604,8 @@ def api_sf(channel: Optional[str] = None) -> Dict[str, Any]:
                        for t in (m.get("team_a"), m.get("team_b")) if t})
     return {"n_teams": len(teams_in), "teams": teams_in,
             "n_matches": len(sf_matches), "matches": sf_matches,
-            "method": "MC 最可能剧本（方案 B）" if _load_most_likely() else "贪心 Top-1 传播"}
+            "method": ("MC 最可能剧本（方案 B/" + _resolve_channel(channel) + "）"
+                       if _load_most_likely(channel) else "贪心 Top-1 传播")}
 
 
 def api_final_match(channel: Optional[str] = None) -> Dict[str, Any]:
@@ -604,7 +614,7 @@ def api_final_match(channel: Optional[str] = None) -> Dict[str, Any]:
     fp = bracket.get("_final_pairing", {})
     
     # 优先用方案 B：MC 最可能剧本
-    ml_final = _ml_lookup("final", 1)
+    ml_final = _ml_lookup("final", 1, channel=channel)
     if ml_final:
         ta = ml_final["team_a"]
         tb = ml_final["team_b"]
@@ -642,7 +652,7 @@ def api_final_match(channel: Optional[str] = None) -> Dict[str, Any]:
             final["predicted_champion"] = ta if p_a >= 0.5 else tb
 
     # 第 3 名：从 sf 半决赛输方推出
-    sf_data = api_sf()
+    sf_data = api_sf(channel)
     losers = []
     for m in sf_data["matches"]:
         if not (m.get("team_a") and m.get("team_b")):

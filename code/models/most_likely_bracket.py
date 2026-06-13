@@ -15,9 +15,11 @@
 
 用法：
     python3 code/models/most_likely_bracket.py 100000
+    python3 code/models/most_likely_bracket.py 100000 phase3   # AI 通道剧本派生
 """
 import sys
 import json
+import os
 from pathlib import Path
 from collections import Counter, defaultdict
 import numpy as np
@@ -27,7 +29,28 @@ from models.monte_carlo import simulate_tournament
 from utils.io import load_teams, load_groups, save_output
 
 
-def run(n_simulations: int = 100000, seed: int = 42):
+def _load_phase3_shifts():
+    """复用 ai_weighted_baseline 反求 phase3 的 (elo_shifts, match_shifts)。
+
+    返回 (shifts, match_shifts) 或在失败/输入缺失时抛出。
+    与 run_ai_weighted_mc.py 阶段 3 保持一致：分段 ELO_PER_PP。
+    """
+    from models.ai_weighted_baseline import (
+        compute_event_level_elo_shifts_segmented,
+        compute_match_level_shifts_segmented,
+    )
+    shifts = compute_event_level_elo_shifts_segmented()
+    if not shifts:
+        raise RuntimeError("phase3 shifts 反求失败：synthesizer_report.json 不可读或为空")
+    try:
+        teams = load_teams()
+    except Exception:
+        teams = None
+    match_shifts = compute_match_level_shifts_segmented(teams_data=teams)
+    return shifts, match_shifts
+
+
+def run(n_simulations: int = 100000, seed: int = 42, channel: str = "base"):
     """
     跑 N 次完整 MC，对每个 match_id 收集 (team_a, team_b, winner) 频次。
     
@@ -52,14 +75,22 @@ def run(n_simulations: int = 100000, seed: int = 42):
     teams = load_teams()
     groups = load_groups()
     rng = np.random.default_rng(seed)
-    
+
+    # ─── 通道注入：phase3 反求 elo_shifts / match_shifts ───
+    elo_shifts = None
+    match_shifts = None
+    if channel == "ai_phase3":
+        elo_shifts, match_shifts = _load_phase3_shifts()
+        print(f"=== AI phase3 通道：注入 {len(elo_shifts)} 队级 ΔE + "
+              f"{len(match_shifts) if match_shifts else 0} 场级 ΔE ===")
+
     # 每个 match_id 计数器： (team_a, team_b) → count
     # 注：球队对是无序的（A vs B == B vs A），用 frozenset 但保留顺序信息时存有序 tuple
     matchup_count = defaultdict(Counter)   # {match_id: Counter({(a,b): n})}
     winner_count  = defaultdict(Counter)   # {match_id: Counter({((a,b), winner): n})}
     round_of = {}                          # {match_id: "r32"|"r16"|"qf"|"sf"|"final"}
     
-    print(f"=== 跑 {n_simulations} 次 MC 采样，统计每场最可能对阵 ===")
+    print(f"=== 跑 {n_simulations} 次 MC 采样（{channel}），统计每场最可能对阵 ===")
     progress_step = max(1, n_simulations // 20)
     
     for i in range(n_simulations):
@@ -67,7 +98,12 @@ def run(n_simulations: int = 100000, seed: int = 42):
             pct = (i + 1) * 100 // n_simulations
             print(f"  Progress: {i+1}/{n_simulations} ({pct}%)")
         
-        _, bracket_record = simulate_tournament(teams, groups, rng, return_bracket=True)
+        _, bracket_record = simulate_tournament(
+            teams, groups, rng,
+            return_bracket=True,
+            elo_shifts=elo_shifts,
+            match_shifts=match_shifts,
+        )
         if bracket_record is None:
             continue
         
@@ -130,12 +166,15 @@ def run(n_simulations: int = 100000, seed: int = 42):
     
     output = {
         "n_simulations": n_simulations,
-        "method": "最可能剧本：每个 match_id 取 MC 出现频次最高的对阵 + 该对阵下最常胜方",
+        "channel": channel,
+        "method": "最可能剧本：每个 match_id 取 MC 出现频次最高的对阵 + 该对阵下最常胜方"
+                  + ("（AI phase3：分段 ELO_PER_PP + 队级/场级 ΔE 注入）" if channel == "ai_phase3" else ""),
         "rounds": result,
     }
-    
-    save_output("most_likely_bracket.json", output)
-    print(f"\n已保存到: data/outputs/most_likely_bracket.json")
+
+    out_name = "most_likely_bracket_ai_phase3.json" if channel == "ai_phase3" else "most_likely_bracket.json"
+    save_output(out_name, output)
+    print(f"\n已保存到: data/outputs/{out_name}")
     
     # 打印摘要
     print("\n=== 摘要 ===")
@@ -156,4 +195,8 @@ def run(n_simulations: int = 100000, seed: int = 42):
 
 if __name__ == "__main__":
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 100000
-    run(n_simulations=n)
+    ch = sys.argv[2] if len(sys.argv) > 2 else "base"
+    if ch not in ("base", "ai_phase3"):
+        print(f"⚠️ 未知 channel '{ch}'，回退 base", file=sys.stderr)
+        ch = "base"
+    run(n_simulations=n, channel=ch)
