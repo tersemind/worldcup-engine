@@ -1008,6 +1008,99 @@ def _snapshot_cascade() -> None:
         log.warning(f"[cascade] 快照写盘失败（已忽略）: {e}")
 
 
+def _freeze_pre_kickoff_predictions(window_min: int = 210) -> None:
+    """cascade 完成后冻结「即将开赛」场次的对阵预测。
+
+    诉求：比赛一开始就不允许再修改预测结果（仅锁单场对阵预测）。
+
+    机制：
+      - cascade 完成后，扫描 (kickoff - window_min, kickoff] 区间内尚未开赛的场次
+      - 调 _quick_match_preview 拿到当下两个通道（base / ai_phase3）的对阵预测
+      - 写入/合并到 data/outputs/frozen_predictions.json
+      - 写入策略：「保留最早冻结值」——一旦该场首次写入，后续 cascade 不再覆盖
+        （避免随 cascade 抖动覆盖；3h mark 触发的 cascade 是首个落入窗口的，会落盘）
+      - kickoff 之后，API 层（tournament_api）读到 frozen 即覆盖 prediction
+
+    所有异常吞掉，绝不影响主流程。
+    window_min 取 210（3.5h）为缓冲：3h mark cascade 可能耗时 30-60s，
+    且非 cascade 触发（如 kalshi 加密期间）也可能落入窗口。
+    """
+    try:
+        from utils.io import DATA_OUTPUTS, DATA_RAW
+        from match_aware import matches_to_freeze
+        from web.tournament_api import _quick_match_preview
+
+        # 赛前 pre_window 内（默认 210min ≈ 3.5h）+ 赛后 post_window 内（4h 兜底）
+        # 后者是为了 kickoff 当下没刚好有 cascade 时，开赛后第一次 cascade 也能锁住
+        candidates = matches_to_freeze(pre_window_min=window_min, post_window_min=240)
+        if not candidates:
+            return
+
+        frozen_path = DATA_OUTPUTS / "frozen_predictions.json"
+        if frozen_path.exists():
+            try:
+                store = json.load(open(frozen_path))
+            except Exception:
+                store = {"matches": {}}
+        else:
+            store = {"matches": {}}
+        store.setdefault("matches", {})
+
+        n_new = 0
+        for m in candidates:
+            ta, tb = m.get("team_a"), m.get("team_b")
+            if not ta or not tb:
+                continue
+            key = f"{ta} vs {tb} @ {m.get('kickoff').strftime('%Y-%m-%d')}"
+            # 保留最早值——已冻结过就跳过
+            if key in store["matches"]:
+                continue
+
+            entry = {
+                "team_a": ta,
+                "team_b": tb,
+                "match_id": m.get("match_id"),
+                "kickoff": m["kickoff"].strftime("%Y-%m-%d %H:%M"),
+                "frozen_at": datetime.now().isoformat(timespec="seconds"),
+                "channels": {},
+            }
+
+            # 两个通道分别冻结（前端按 channel 切换）
+            for ch in ("base", "ai_phase3"):
+                try:
+                    pred = _quick_match_preview(ta, tb,
+                                                  venue_city=m.get("venue_city"),
+                                                  channel=ch)
+                    if "error" in pred:
+                        continue
+                    entry["channels"][ch] = {
+                        "p_win_a": pred["p_win_a"],
+                        "p_draw": pred["p_draw"],
+                        "p_win_b": pred["p_win_b"],
+                        "predicted_winner": pred["predicted_winner"],
+                        "winner_confidence_pct": pred["winner_confidence_pct"],
+                        "lambda_a": pred["lambda_a"],
+                        "lambda_b": pred["lambda_b"],
+                        "forecast_format": pred.get("forecast_format", {}),
+                    }
+                except Exception as e:
+                    log.warning(f"[freeze] {ta} vs {tb} channel={ch} 预测失败: {e}")
+
+            if entry["channels"]:
+                store["matches"][key] = entry
+                n_new += 1
+                log.info(f"[freeze] 锁定预测 {ta} vs {tb} kickoff={entry['kickoff']}")
+
+        if n_new > 0:
+            store["updated_at"] = datetime.now().isoformat(timespec="seconds")
+            store["n_total"] = len(store["matches"])
+            with open(frozen_path, "w") as f:
+                json.dump(store, f, ensure_ascii=False, indent=2)
+            log.info(f"[freeze] frozen_predictions.json 新增 {n_new} 场（共 {len(store['matches'])} 场）")
+    except Exception as e:
+        log.warning(f"[freeze] 冻结预测失败（已忽略）: {e}")
+
+
 def task_cascade() -> dict:
     """五层架构级联重算（P1: cascade 流水线扩展）
 
@@ -1317,6 +1410,7 @@ class Scheduler:
                 result = task_cascade()
                 log.info(f"[cascade] ✓ {time.time()-t0:.1f}s {result.get('summary','')}")
                 _snapshot_cascade()  # 时间序列快照（try/except 全包裹，失败不影响主流程）
+                _freeze_pre_kickoff_predictions()  # 冻结即将开赛场次的预测（仅单场对阵）
             except Exception as e:
                 log.error(f"[cascade] ✗ {e}")
             finally:

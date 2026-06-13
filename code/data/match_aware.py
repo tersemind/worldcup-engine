@@ -47,7 +47,10 @@ DEFAULT_MATCH_AWARE = {
         "tasks": ["group_results", "live_events"],
     },
     "pre_match": {
-        "trigger_min_before": [30, 15, 5],  # 开赛前各触发一次 cascade
+        # 赛前 12h / 6h / 3h 各触发一次 cascade
+        # 3h 是「最后一次预测」——cascade 完成后会把该场预测冻结，
+        # kickoff 之后预测不再更新（见 freeze_pre_kickoff_predictions）
+        "trigger_min_before": [720, 360, 180],
         "tasks": ["cascade", "lineups", "referee", "h2h"],
         "tight_interval_min": 5,            # 非 cascade 任务在赛前 60min 内的间隔
         "tight_window_min_before": 60,
@@ -223,6 +226,73 @@ def pre_match_cascade_marks(now: Optional[datetime] = None, lookback_sec: int = 
             delta = (now - target).total_seconds()
             if 0 <= delta <= lookback_sec:
                 out.append((int(mb), m))
+    return out
+
+
+def get_match_kickoff(team_a: str, team_b: str, now: Optional[datetime] = None) -> Optional[datetime]:
+    """根据双方队名查 kickoff（本机时区 datetime）。失败返 None。
+
+    用于 API 层判断「这场是否已开赛」——开赛后预测应锁死。
+    匹配规则：(team_a, team_b) 与 group_schedule.json 严格相等（顺序不限）。
+    """
+    now = now or datetime.now()
+    try:
+        for m in _load_matches_today(now):
+            ta, tb = m.get("team_a"), m.get("team_b")
+            if (ta == team_a and tb == team_b) or (ta == team_b and tb == team_a):
+                return m["kickoff"]
+    except Exception:
+        pass
+    return None
+
+
+def is_match_locked(team_a: str, team_b: str, now: Optional[datetime] = None) -> bool:
+    """该场是否已开赛 → 已开赛即冻结预测。
+
+    缓存窗口 ±48h，所以历史比赛会回退到「无 kickoff」→ 返回 False
+    （历史比赛的预测无意义，不需要冻结路径——直接走实时即可）。
+    """
+    ko = get_match_kickoff(team_a, team_b, now)
+    if ko is None:
+        return False
+    return (now or datetime.now()) >= ko
+
+
+def matches_within_pre_kickoff(window_min: int, now: Optional[datetime] = None) -> List[dict]:
+    """返回当前 (kickoff-window_min, kickoff] 内尚未开赛的场次。
+
+    用于 cascade 完成后落盘 frozen_predictions：
+    把开赛前 window_min 分钟内的场次 preview 固化。
+    """
+    now = now or datetime.now()
+    out: List[dict] = []
+    for m in _load_matches_today(now):
+        ko = m["kickoff"]
+        min_until = (ko - now).total_seconds() / 60.0
+        if 0 < min_until <= window_min:
+            out.append(m)
+    return out
+
+
+def matches_to_freeze(pre_window_min: int = 210,
+                       post_window_min: int = 240,
+                       now: Optional[datetime] = None) -> List[dict]:
+    """返回应该冻结的场次列表，覆盖两类：
+      1. 即将开赛（kickoff - pre_window, kickoff]：赛前最后一次预测
+      2. 刚开赛（kickoff, kickoff + post_window]：兜底——cascade 没赶上 kickoff 时
+         开赛后第一次 cascade 用当下值锁住
+
+    第二类是为了应对「kickoff 当下没刚好有 cascade 跑」的场景；
+    一旦冻结过该场，后续 cascade 不再覆盖（freeze 函数本身保留最早值）。
+    """
+    now = now or datetime.now()
+    out: List[dict] = []
+    for m in _load_matches_today(now):
+        ko = m["kickoff"]
+        delta_min = (ko - now).total_seconds() / 60.0
+        # 赛前 pre_window 内 OR 赛后 post_window 内
+        if (0 < delta_min <= pre_window_min) or (-post_window_min <= delta_min <= 0):
+            out.append(m)
     return out
 
 

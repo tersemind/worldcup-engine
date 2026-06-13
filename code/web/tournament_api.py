@@ -49,6 +49,65 @@ def _resolve_channel(channel: Optional[str]) -> str:
     return "base"
 
 
+# ============ 冻结预测加载 ============
+# 「比赛开始即冻结」机制：scheduler 在赛前 cascade 完成后把单场对阵预测固化到
+# frozen_predictions.json；kickoff 之后 API 优先返回冻结值，保证开赛即锁。
+# 见 code/data/scheduler.py::_freeze_pre_kickoff_predictions
+_FROZEN_CACHE = {"data": None, "mtime": 0.0}
+
+
+def _load_frozen_predictions() -> Dict[str, Any]:
+    """加载 frozen_predictions.json（带 mtime 缓存）。失败返 {}。"""
+    try:
+        path = DATA_OUTPUTS / "frozen_predictions.json"
+        if not path.exists():
+            return {}
+        mtime = path.stat().st_mtime
+        if _FROZEN_CACHE["data"] is not None and _FROZEN_CACHE["mtime"] == mtime:
+            return _FROZEN_CACHE["data"]
+        data = json.load(open(path))
+        _FROZEN_CACHE["data"] = data
+        _FROZEN_CACHE["mtime"] = mtime
+        return data
+    except Exception:
+        return {}
+
+
+def _frozen_lookup(team_a: str, team_b: str, date: str,
+                   channel: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """查该场该 channel 的冻结预测；无则 None。
+
+    匹配 key：「team_a vs team_b @ date」，与 scheduler 写入侧一致。
+    """
+    store = _load_frozen_predictions()
+    matches = store.get("matches") if isinstance(store, dict) else None
+    if not matches:
+        return None
+    key = f"{team_a} vs {team_b} @ {date}"
+    entry = matches.get(key)
+    if not entry:
+        return None
+    ch = _resolve_channel(channel)
+    return (entry.get("channels") or {}).get(ch)
+
+
+def _is_match_started(date: str, time_local: str, tz: str) -> bool:
+    """该场是否已开赛 → 已开赛即应使用冻结预测。
+
+    用 match_aware 的时区表把 (date, time_local, tz) 转本机时间后与 now 比较。
+    任何异常都返回 False（保守不锁），避免误判误锁未开赛场次。
+    """
+    try:
+        from data.match_aware import _parse_kickoff_to_local
+        from datetime import datetime
+        ko = _parse_kickoff_to_local(date, time_local, tz)
+        if ko is None:
+            return False
+        return datetime.now() >= ko
+    except Exception:
+        return False
+
+
 def _load_mc(channel: Optional[str] = None):
     """加载 MC 模拟概率。channel="ai_phase3" 时读 phase3，否则 base。
     AI 通道文件不存在自动回退 base，保证不破坏主流程。"""
@@ -1201,6 +1260,39 @@ def api_group_schedule(channel: Optional[str] = None) -> Dict[str, Any]:
                     entry["prediction_hit"] = (pred_w == actual_w)
         except Exception as e:
             entry["prediction_error"] = str(e)
+
+        # ===== 冻结覆盖：比赛一开始就锁定对阵预测（仅单场，不影响出线/冠军榜）=====
+        # 触发条件：kickoff 已过 + frozen_predictions.json 中有该场该 channel 的快照
+        # 来源：scheduler 在赛前 cascade 完成后落盘的 _freeze_pre_kickoff_predictions
+        try:
+            if _is_match_started(m.get("date", ""), m.get("time_local", ""), m.get("tz", "")):
+                frozen = _frozen_lookup(m["team_a"], m["team_b"], m["date"], channel=channel)
+                if frozen and "prediction" in entry:
+                    # 用冻结值覆盖对阵字段，并保留实时值作为审计
+                    entry["prediction"]["_live_p_win_a"] = entry["prediction"].get("p_win_a")
+                    entry["prediction"]["_live_p_draw"] = entry["prediction"].get("p_draw")
+                    entry["prediction"]["_live_p_win_b"] = entry["prediction"].get("p_win_b")
+                    entry["prediction"]["p_win_a"] = frozen.get("p_win_a")
+                    entry["prediction"]["p_draw"] = frozen.get("p_draw")
+                    entry["prediction"]["p_win_b"] = frozen.get("p_win_b")
+                    entry["prediction"]["predicted_winner"] = frozen.get("predicted_winner")
+                    entry["prediction"]["winner_confidence_pct"] = frozen.get("winner_confidence_pct")
+                    entry["prediction"]["lambda_a"] = frozen.get("lambda_a")
+                    entry["prediction"]["lambda_b"] = frozen.get("lambda_b")
+                    if frozen.get("forecast_format"):
+                        entry["prediction"]["forecast_format"] = frozen["forecast_format"]
+                    entry["prediction"]["frozen"] = True
+                    entry["prediction"]["frozen_at"] = (
+                        _load_frozen_predictions()
+                        .get("matches", {})
+                        .get(f"{m['team_a']} vs {m['team_b']} @ {m['date']}", {})
+                        .get("frozen_at")
+                    )
+                    # 已结束场次的命中标记需基于冻结值重算（覆盖上面用 live 值算的）
+                    if actual:
+                        entry["prediction_hit"] = (frozen.get("predicted_winner") == actual.get("winner"))
+        except Exception as e:
+            entry.setdefault("prediction", {})["frozen_error"] = str(e)
         
         # 单场市场偏差（Kalshi vs 模型）— 只在 Kalshi 有覆盖时附加
         bias = _mb_lookup(m["team_a"], m["team_b"], m["date"])
