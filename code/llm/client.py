@@ -2,10 +2,16 @@
 Lingya LLM 客户端（OpenAI 兼容协议）
 
 环境变量：
-    LINGYA_API_KEY        必填
-    LINGYA_BASE_URL       可选，默认 https://api.lingyaai.cn/v1
-    WORLDCUP_LLM_MODEL    可选，默认 deepseek-v4-flash
-    WORLDCUP_LLM_CACHE    可选，默认 1（开启磁盘缓存）
+    LINGYA_API_KEY                必填
+    LINGYA_BASE_URL               可选，默认 https://api.lingyaai.cn/v1
+    WORLDCUP_LLM_MODEL            可选，默认 deepseek-v4-flash（主模型，便宜快）
+    WORLDCUP_LLM_FALLBACK_MODEL   可选，默认 deepseek-v4-flash-max（备用，稳定但贵）
+    WORLDCUP_LLM_FALLBACK_AFTER   可选，默认 3（主模型连续失败 N 次后进程级切换到备用）
+    WORLDCUP_LLM_CACHE            可选，默认 1（开启磁盘缓存）
+
+降级机制（两级）：
+    1. 单次失败：主模型 chat 抛错 → 立刻用备用模型再试一次（同一次调用内）
+    2. 连续失败：主模型连续失败超过 FALLBACK_AFTER 次 → 进程后续直接用备用模型
 
 使用：
     from llm import get_default_client, LLMUnavailable
@@ -20,9 +26,12 @@ from __future__ import annotations
 import os
 import json
 import time
+import logging
 import hashlib
 from pathlib import Path
 from typing import Optional, Dict, Any
+
+logger = logging.getLogger("worldcup.llm")
 
 
 class LLMUnavailable(Exception):
@@ -57,9 +66,15 @@ class LLMClient:
 
         self.base_url = base_url or os.getenv("LINGYA_BASE_URL", "https://api.lingyaai.cn/v1")
         self.model = model or os.getenv("WORLDCUP_LLM_MODEL", "deepseek-v4-flash")
+        self.fallback_model = os.getenv("WORLDCUP_LLM_FALLBACK_MODEL", "deepseek-v4-flash-max")
+        self.fallback_after = int(os.getenv("WORLDCUP_LLM_FALLBACK_AFTER", "3"))
         self.timeout = timeout
         self.max_retries = max_retries
         self.use_cache = use_cache
+
+        # 降级状态
+        self._consecutive_failures = 0  # 主模型连续失败计数
+        self._using_fallback = False    # 是否已进程级切换到备用模型
 
         self._client = OpenAI(
             api_key=api_key,
@@ -94,6 +109,27 @@ class LLMClient:
         f.write_text(json.dumps({"content": content, "meta": meta, "ts": time.time()},
                                  ensure_ascii=False, indent=2))
 
+    # ============ 模型选择 ============
+    @property
+    def active_model(self) -> str:
+        """当前生效模型（已切换到备用则返回 fallback_model）"""
+        return self.fallback_model if self._using_fallback else self.model
+
+    def _try_one_model(self, model: str, system: str, user: str,
+                        temperature: float, max_tokens: int):
+        """单次尝试某模型；成功返回 (content, resp)，失败抛 Exception"""
+        resp = self._client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        content = resp.choices[0].message.content or ""
+        return content, resp
+
     # ============ 主入口 ============
     def chat(
         self,
@@ -106,41 +142,89 @@ class LLMClient:
         """
         发送一次对话，返回模型文本。
         json_mode=True 时强制要求 JSON 输出（通过 system 指令 + 后处理抽取）。
-        """
-        cache_key = self._cache_key(self.model, system, user, json_mode, temperature)
-        cached = self._cache_get(cache_key)
-        if cached is not None:
-            return cached
 
+        降级路径：
+            1. 用 active_model（主或已切换的备用）查缓存→直接返回
+            2. 调用 active_model；成功 → 重置失败计数
+            3. 调用失败：
+               a. 若 active 是主模型：立即用备用模型重试一次
+                  - 备用成功 → 累计主模型失败；若达阈值则进程级切换
+                  - 备用也失败 → raise
+               b. 若 active 已是备用模型：直接 raise
+        """
         if json_mode:
-            # 在 system 末尾追加强约束
             system = system.rstrip() + (
                 "\n\n严格要求：输出必须是单个合法 JSON 对象，"
                 "不要包含 markdown 代码块标记（```），不要在 JSON 之外添加任何解释文字。"
             )
 
-        try:
-            resp = self._client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
-            content = resp.choices[0].message.content or ""
-        except Exception as e:
-            raise LLMUnavailable(f"LLM 调用失败: {type(e).__name__}: {e}")
+        active = self.active_model
+        cache_key = self._cache_key(active, system, user, json_mode, temperature)
+        cached = self._cache_get(cache_key)
+        if cached is not None:
+            return cached
 
-        # 缓存
-        self._cache_put(cache_key, content, {
-            "model": self.model,
-            "json_mode": json_mode,
-            "temperature": temperature,
-            "usage": getattr(resp, "usage", None) and resp.usage.model_dump(),
-        })
-        return content
+        # 1. 试 active model
+        try:
+            content, resp = self._try_one_model(active, system, user, temperature, max_tokens)
+            # 主模型成功 → 重置失败计数
+            if active == self.model:
+                self._consecutive_failures = 0
+            self._cache_put(cache_key, content, {
+                "model": active,
+                "json_mode": json_mode,
+                "temperature": temperature,
+                "usage": getattr(resp, "usage", None) and resp.usage.model_dump(),
+            })
+            return content
+        except Exception as e:
+            primary_err = f"{type(e).__name__}: {e}"
+
+        # 2. 主模型失败：试备用模型一次（仅当当前 active 是主模型时）
+        if active == self.model and self.fallback_model and self.fallback_model != self.model:
+            self._consecutive_failures += 1
+            logger.warning(
+                f"主模型 {self.model} 失败 ({self._consecutive_failures}/{self.fallback_after}) "
+                f"→ 单次降级到 {self.fallback_model}: {primary_err}"
+            )
+            fb_cache_key = self._cache_key(self.fallback_model, system, user, json_mode, temperature)
+            fb_cached = self._cache_get(fb_cache_key)
+            if fb_cached is not None:
+                self._maybe_switch_to_fallback()
+                return fb_cached
+            try:
+                content, resp = self._try_one_model(
+                    self.fallback_model, system, user, temperature, max_tokens
+                )
+                self._cache_put(fb_cache_key, content, {
+                    "model": self.fallback_model,
+                    "json_mode": json_mode,
+                    "temperature": temperature,
+                    "usage": getattr(resp, "usage", None) and resp.usage.model_dump(),
+                    "via": "single_call_fallback",
+                })
+                self._maybe_switch_to_fallback()
+                return content
+            except Exception as e2:
+                raise LLMUnavailable(
+                    f"LLM 主+备用都失败: 主={primary_err}; "
+                    f"备={type(e2).__name__}: {e2}"
+                )
+
+        # 3. 当前已经是备用模型，或没有备用 → 直接失败
+        raise LLMUnavailable(f"LLM 调用失败: {primary_err}")
+
+    def _maybe_switch_to_fallback(self) -> None:
+        """主模型连续失败达阈值 → 进程级切换到备用模型"""
+        if (
+            not self._using_fallback
+            and self._consecutive_failures >= self.fallback_after
+        ):
+            logger.warning(
+                f"主模型 {self.model} 连续失败 {self._consecutive_failures} 次 "
+                f"≥ 阈值 {self.fallback_after}，进程级切换到备用模型 {self.fallback_model}"
+            )
+            self._using_fallback = True
 
     @staticmethod
     def extract_json(text: str) -> Dict[str, Any]:

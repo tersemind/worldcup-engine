@@ -7,6 +7,7 @@ Queen-led Swarm 调度器
 - Worker 节点（战术 + 执行）独立分析
 - Byzantine 容错（2/3 多数 + 加权共识）
 """
+import os
 import sys
 import json
 import time
@@ -15,11 +16,17 @@ from typing import List, Dict, Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from agents.base import Agent, AgentOutput, ConsensusAggregator, Critic
+from agents.llm_base import LLMAgent
 from agents.strategic import MacroTrendAgent, FormatAnalysisAgent, RiskPerceptionAgent
 from agents.tactical import EloAgent, PoissonAgent, XGAgent, XTAgent, CatBoostAgent, SquadValueAgent, HealthAgent, ContextAgent, MarketAgent
 from agents.execution import OptimistAgent, PessimistAgent, PathwayAgent, PsychologyAgent, MarketBiasAgent
 from agents.debate import DebateEngine, batch_debate, summarize
 from utils.io import load_teams, DATA_OUTPUTS, DATA_RAW
+
+
+class LLMQuorumError(RuntimeError):
+    """LLM Agent 可用率低于阈值时抛出（fail-fast）"""
+    pass
 
 
 class QueenSwarm:
@@ -172,6 +179,47 @@ class QueenSwarm:
                 n_teams = len(out.probability_dist or {})
                 print(f"   ✓ {agent.name:<18} → {n_teams} 队, {elapsed*1000:.1f}ms, conf={out.confidence}")
         
+        # ====== LLM Quorum 检查（fail-fast 阀门）======
+        # 仅统计 LLMAgent 子类；规则 Agent (Elo/Market/Health 等) 不计入
+        # 阈值由 WORLDCUP_LLM_REQUIRE 控制：允许 fallback 比例上限
+        #   = 0.0 → 禁止任何 fallback（最严）
+        #   = 0.5 → 允许最多 50% fallback（默认）
+        #   = 1.0 → 等同旧行为（无强制）
+        max_fallback_ratio = float(os.getenv("WORLDCUP_LLM_REQUIRE", "0.5"))
+        llm_outputs = [o for o, a in zip(outputs, self.all_agents())
+                        if isinstance(a, LLMAgent)]
+        n_llm_total = len(llm_outputs)
+        n_fallback = sum(
+            1 for o in llm_outputs
+            if not any("[source:LLM]" in e for e in (o.evidence or []))
+        )
+        fallback_ratio = (n_fallback / n_llm_total) if n_llm_total else 0.0
+        llm_health = {
+            "total_llm_agents": n_llm_total,
+            "fallback_count": n_fallback,
+            "fallback_ratio": round(fallback_ratio, 3),
+            "threshold": max_fallback_ratio,
+            "passed": fallback_ratio <= max_fallback_ratio,
+            "fallback_agents": [
+                o.agent_name for o in llm_outputs
+                if not any("[source:LLM]" in e for e in (o.evidence or []))
+            ],
+        }
+        if verbose:
+            status = "✅" if llm_health["passed"] else "❌"
+            print(f"\n🔌 LLM Quorum: {status} {n_fallback}/{n_llm_total} fallback "
+                  f"(ratio={fallback_ratio:.2f}, threshold={max_fallback_ratio})")
+            if n_fallback > 0:
+                print(f"   降级 Agent: {llm_health['fallback_agents']}")
+        if not llm_health["passed"]:
+            raise LLMQuorumError(
+                f"LLM Agent 大面积失败：{n_fallback}/{n_llm_total} 走 fallback "
+                f"(ratio={fallback_ratio:.2f} > {max_fallback_ratio})。"
+                f"降级 Agent: {llm_health['fallback_agents']}。"
+                f"请检查 LINGYA_API_KEY 是否设置或 LLM 网关是否可用。"
+                f"如需绕过，可设置 WORLDCUP_LLM_REQUIRE=1.0。"
+            )
+
         # Queen 聚合
         if verbose:
             print(f"\n👑 Queen 共识聚合（Byzantine 容错 2/3 多数）...")
@@ -336,6 +384,7 @@ class QueenSwarm:
                     for team, dr in debate_results.items()
                 },
             },
+            "llm_health": llm_health,
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
         
