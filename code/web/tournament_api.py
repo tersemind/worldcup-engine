@@ -74,8 +74,74 @@ def _load_synth(channel: Optional[str] = None):
     return json.load(open(p)) if p.exists() else {}
 
 
-def _load_group_rank_dist():
-    """加载小组第 1 名概率分布（MC 采样）"""
+# ============ phase3 通道：preview 注入 ============
+# 模块级缓存，避免每次 preview 都重新反求 match_shifts（一次 cascade 内不变）
+_PHASE3_MATCH_SHIFTS_CACHE = None
+_PHASE3_EVENT_SHIFTS_CACHE = None
+_PHASE3_CACHE_MTIME = None
+
+
+def _phase3_shifts():
+    """读 phase3 的 (event_level_shifts, match_level_shifts)，按 synth_phase3.json mtime 缓存。
+
+    返回 (event_shifts: {team:ΔE}, match_shifts: {(a,b):(ΔE_a,ΔE_b)})；
+    失败或文件缺失返回 ({}, {})——绝不破坏 preview 主流程。
+    """
+    global _PHASE3_MATCH_SHIFTS_CACHE, _PHASE3_EVENT_SHIFTS_CACHE, _PHASE3_CACHE_MTIME
+    try:
+        synth_p = DATA_OUTPUTS / "synthesizer_report_ai_phase3.json"
+        if not synth_p.exists():
+            return {}, {}
+        mtime = synth_p.stat().st_mtime
+        if (_PHASE3_MATCH_SHIFTS_CACHE is not None
+                and _PHASE3_EVENT_SHIFTS_CACHE is not None
+                and _PHASE3_CACHE_MTIME == mtime):
+            return _PHASE3_EVENT_SHIFTS_CACHE, _PHASE3_MATCH_SHIFTS_CACHE
+        from models.ai_weighted_baseline import (
+            compute_event_level_elo_shifts_segmented,
+            compute_match_level_shifts_segmented,
+        )
+        event_shifts = compute_event_level_elo_shifts_segmented() or {}
+        try:
+            teams_data = _load_teams()
+        except Exception:
+            teams_data = None
+        match_shifts = compute_match_level_shifts_segmented(teams_data=teams_data) or {}
+        _PHASE3_EVENT_SHIFTS_CACHE = event_shifts
+        _PHASE3_MATCH_SHIFTS_CACHE = match_shifts
+        _PHASE3_CACHE_MTIME = mtime
+        return event_shifts, match_shifts
+    except Exception:
+        # 反求失败不污染主线
+        return {}, {}
+
+
+def _phase3_match_delta(team_a: str, team_b: str):
+    """返回 phase3 通道下的 (ΔE_a, ΔE_b)。
+    优先用 match_shifts（场级），缺失退到 event_shifts（队级），都缺失返回 (0,0)。"""
+    ev, mt = _phase3_shifts()
+    if not ev and not mt:
+        return 0.0, 0.0
+    if mt:
+        ms = mt.get((team_a, team_b))
+        if ms:
+            return float(ms[0]), float(ms[1])
+        ms_rev = mt.get((team_b, team_a))
+        if ms_rev:
+            # 反向键：交换
+            return float(ms_rev[1]), float(ms_rev[0])
+    # 退队级
+    return float(ev.get(team_a, 0.0)), float(ev.get(team_b, 0.0))
+
+
+def _load_group_rank_dist(channel: Optional[str] = None):
+    """加载小组第 1 名概率分布（MC 采样）。
+    channel="ai_phase3" 时优先读 phase3 派生文件，缺失自动回退 base。"""
+    ch = _resolve_channel(channel)
+    if ch == "ai_phase3":
+        p = DATA_OUTPUTS / "group_rank_dist_ai_phase3.json"
+        if p.exists():
+            return json.load(open(p))
     p = DATA_OUTPUTS / "group_rank_dist.json"
     return json.load(open(p)) if p.exists() else None
 
@@ -209,7 +275,7 @@ def api_groups(channel: Optional[str] = None) -> Dict[str, Any]:
     teams = _load_teams()
     groups_data = _load_groups()
     mc = _load_mc(channel)
-    rank_dist = _load_group_rank_dist()
+    rank_dist = _load_group_rank_dist(channel)
 
     # 按 group 字段分组
     by_group: Dict[str, List[Dict]] = {}
@@ -805,7 +871,18 @@ def _quick_match_preview(team_a: str, team_b: str,
     sv_b = synth_b.get("adj_squad_value", 0)
     ta_adj["xg_for"] = ta["xg_for"] * (1 + sv_a / 100.0)
     tb_adj["xg_for"] = tb["xg_for"] * (1 + sv_b / 100.0)
-    
+
+    # ===== phase3 注入：A 方案（队级+场级 ΔE）=====
+    # 注：base 的 4 项 adj 已在上面叠加；phase3 在此基础上再叠加 ai_weighted_baseline
+    # 反求出来的 ΔE（来自 swarm/critical_node/分段 ELO_PER_PP 等"非 mc 校准"），
+    # 让小组赛/r32-final 的 preview 都能反映 phase3 增益，不再仅"剧本切换"。
+    phase3_delta_a = 0.0
+    phase3_delta_b = 0.0
+    if _resolve_channel(channel) == "ai_phase3":
+        phase3_delta_a, phase3_delta_b = _phase3_match_delta(team_a, team_b)
+        ta_adj["elo"] += phase3_delta_a
+        tb_adj["elo"] += phase3_delta_b
+
     # ===== B+ 方案：主场加成 =====
     # 60 Elo ≈ +8-10pp 单场胜率（参考 LLM 分析"USA 主场优势通常值 10-15%"下限）
     HOME_ELO_BOOST = 60
@@ -915,6 +992,13 @@ def _quick_match_preview(team_a: str, team_b: str,
         "winner_confidence_pct": round(win_conf * 100, 1),
         "top_scorelines": top_scores,
         "score_model": poi.get("model"),
+        # phase3 通道增量：A 方案 ΔE 注入审计（base 通道时全 0）
+        "phase3_adjustment": {
+            "channel": _resolve_channel(channel),
+            f"{team_a}_delta_elo": round(phase3_delta_a, 1),
+            f"{team_b}_delta_elo": round(phase3_delta_b, 1),
+            "source": "ai_weighted_baseline.compute_match_level_shifts_segmented",
+        },
         # B 方案：synth 球队级调整审计字段
         "synth_adjustment": {
             f"{team_a}_total_pp": round(adj_a_pp, 2),
