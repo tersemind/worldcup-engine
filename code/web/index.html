@@ -556,6 +556,82 @@ function polymarketUrl(team_a, team_b, date) {
   return `https://polymarket.com/event/fifwc-${a}-${b}-${date}/soccer-fifwc`;
 }
 
+// ===== 时区换算：场地当地时间 → 北京时间 =====
+// 与后端 match_aware._TZ_OFFSET_HOURS 对齐（schedule.json 统一标 EDT，按 tz 字段换算）
+const _TZ_OFFSET_HOURS = {
+  "EDT": -4, "EST": -5, "CDT": -5, "CST": -6,
+  "MDT": -6, "MST": -7, "PDT": -7, "PST": -8,
+  "ADT": -3, "AST": -4, "AKDT": -8, "AKST": -9,
+  "HDT": -9, "HST": -10, "UTC": 0, "GMT": 0,
+  "CEST": 2, "CET": 1, "BST": 1,
+  "JST": 9, "KST": 9, "AEST": 10, "AEDT": 11,
+  "ART": -3, "BRT": -3, "BRST": -2,
+};
+const _BEIJING_OFFSET = 8;
+
+// 把 (date, time_local, tz) 换算成北京时间 → 返回 {date, time, weekday, raw}
+function toBeijingTime(date, time_local, tz) {
+  if (!date) return { date: '-', time: '-', weekday: '', raw: '' };
+  const tzU = (tz || '').toUpperCase();
+  const offset = _TZ_OFFSET_HOURS[tzU];
+  if (offset === undefined || !time_local) {
+    return { date: date, time: time_local || '-', weekday: '', raw: `${date} ${time_local || ''} ${tz || ''}`.trim() };
+  }
+  // date+time 当作 UTC 解析，再加 (BJ - tz) 偏移
+  const [y, mo, d] = date.split('-').map(Number);
+  const [h, mi] = time_local.split(':').map(Number);
+  const utcMs = Date.UTC(y, mo - 1, d, h, mi);
+  const bjMs = utcMs + (_BEIJING_OFFSET - offset) * 3600 * 1000;
+  const bj = new Date(bjMs);
+  const pad = n => String(n).padStart(2, '0');
+  const bjDate = `${bj.getUTCFullYear()}-${pad(bj.getUTCMonth()+1)}-${pad(bj.getUTCDate())}`;
+  const bjTime = `${pad(bj.getUTCHours())}:${pad(bj.getUTCMinutes())}`;
+  const wkMap = ['日','一','二','三','四','五','六'];
+  const wk = wkMap[bj.getUTCDay()];
+  return {
+    date: bjDate,
+    time: bjTime,
+    weekday: '周' + wk,
+    raw: `${date} ${time_local} ${tz || ''}`.trim(),
+  };
+}
+
+// 用于排序的统一 UTC 时间戳（毫秒）
+function kickoffUtcMs(date, time_local, tz) {
+  if (!date) return 0;
+  const offset = _TZ_OFFSET_HOURS[(tz || '').toUpperCase()];
+  const [y, mo, d] = date.split('-').map(Number);
+  const [h, mi] = (time_local || '00:00').split(':').map(Number);
+  const utcMs = Date.UTC(y, mo - 1, d, h, mi);
+  if (offset === undefined) return utcMs;
+  return utcMs - offset * 3600 * 1000;
+}
+
+// 共享赛程缓存：以 (team_a|team_b|date) 为键查 time_local/tz
+window._scheduleIndex = window._scheduleIndex || null;
+async function getScheduleIndex() {
+  if (window._scheduleIndex) return window._scheduleIndex;
+  try {
+    const d = await fetchJSON('/api/group_schedule');
+    const idx = {};
+    (d.matches || []).forEach(m => {
+      const key1 = `${m.team_a}|${m.team_b}|${m.date}`;
+      const key2 = `${m.team_b}|${m.team_a}|${m.date}`;
+      idx[key1] = { time_local: m.time_local, tz: m.tz };
+      idx[key2] = { time_local: m.time_local, tz: m.tz };
+    });
+    window._scheduleIndex = idx;
+    return idx;
+  } catch (e) {
+    window._scheduleIndex = {};
+    return window._scheduleIndex;
+  }
+}
+function lookupKickoff(team_a, team_b, date) {
+  const idx = window._scheduleIndex || {};
+  return idx[`${team_a}|${team_b}|${date}`] || null;
+}
+
 function kalshiUrl(event_ticker) {
   // Kalshi 真单场 URL: kalshi.com/markets/kxwcgame/world-cup-game/<event_ticker_lowercase>
   // 如果没 event_ticker（该场无 Kalshi 市场），跳系列页
@@ -752,10 +828,10 @@ async function renderGroupSchedule() {
   });
 
   for (const g of Object.keys(byGroup).sort()) {
-    const matches = byGroup[g].sort((a, b) => (a.date + a.time_local).localeCompare(b.date + b.time_local));
+    const matches = byGroup[g].sort((a, b) => kickoffUtcMs(a.date, a.time_local, a.tz) - kickoffUtcMs(b.date, b.time_local, b.tz));
     html += `<h3 style="color:#ffd700;margin-top:25px;">${g} 组（6 场）</h3>`;
     html += '<table class="group-table"><thead><tr>';
-    html += '<th class="num">日期</th><th class="num">时间</th><th>场馆 (城市)</th>';
+    html += '<th class="num" title="北京时间">日期 (北京)</th><th class="num" title="北京时间">时间 (北京)</th><th>场馆 (城市)</th>';
     html += '<th class="right">主队</th><th class="num">比分</th><th>客队</th>';
     html += '<th class="num">主胜%</th><th class="num">平%</th><th class="num">客胜%</th>';
     html += '<th class="num">净胜球</th><th class="num">预测比分</th>';
@@ -862,7 +938,11 @@ async function renderGroupSchedule() {
 
       const predOpacity = isPlayed ? 'opacity:0.55' : '';
 
-      const dateShort = m.date.replace('2026-', '');
+      // 时间统一换算为北京时间（数据源是场地当地时间 + tz 字段）
+      const bj = toBeijingTime(m.date, m.time_local, m.tz);
+      const dateShort = bj.date.replace('2026-', '');
+      const bjTimeCell = bj.time + (bj.weekday ? `<span style="color:#666;font-size:0.8em;margin-left:4px">${bj.weekday}</span>` : '');
+      const tzTipAttr = ` title="场地当地：${bj.raw}"`;
       // 行 ID + 是否可展开（有 LLM 判定 且 胜方分歧 / 或 任一方有伤）
       const rowKey = `gs-${m.group}-${m.match_id || (m.team_a + m.team_b + m.date)}`;
       const detailId = `${rowKey}-detail`;
@@ -891,8 +971,8 @@ async function renderGroupSchedule() {
       }
       
       html += `<tr ${onclick} style="${cursor}">
-        <td class="num" style="color:#aaa">${dateShort}${expandHint}</td>
-        <td class="num" style="color:#aaa">${m.time_local || '-'}</td>
+        <td class="num" style="color:#aaa"${tzTipAttr}>${dateShort}${expandHint}</td>
+        <td class="num" style="color:#aaa"${tzTipAttr}>${bjTimeCell}</td>
         <td style="color:#888;font-size:0.85em">${m.venue}<br><span style="color:#666">${m.venue_city || ''}</span></td>
         <td class="${aCls} right"><strong>${zh(m.team_a)}</strong>${injuryBadge(injA)}</td>
         <td class="num">${scoreCell}</td>
@@ -1089,7 +1169,10 @@ function knockoutRow(m, idField) {
   const winner = m._ml_winner || p.predicted_winner;
   const aCls = winner === m.team_a ? 'winner' : 'loser';
   const bCls = winner === m.team_b ? 'winner' : 'loser';
-  const meta = [m.venue, m.date].filter(Boolean).join(' · ');
+  // 时间统一展示北京时间（数据 m.date/time_local/tz 是场地当地）
+  const _bj = toBeijingTime(m.date, m.time_local, m.tz);
+  const _bjStr = _bj.time !== '-' ? `${_bj.date} ${_bj.time}` : _bj.date;
+  const meta = [m.venue, _bjStr].filter(Boolean).join(' · ');
   const drawTxt = p.p_draw ? `${(p.p_draw*100).toFixed(0)}%` : '-';
   // 方案 B：MC 该对阵出现概率（诚实度指标）
   let mlCell = '<td class="num" style="color:#666">-</td>';
@@ -1145,7 +1228,7 @@ function knockoutTable(matches, idField, title) {
   html += '<th class="num">客胜%</th><th>客队</th><th class="num">净胜球</th><th class="num">置信度</th>';
   html += '<th class="num" title="此对阵在 MC 10 万次模拟中真实出现的频率（鼠标悬停看备选对阵）">MC 概率</th>';
   html += '<th class="num" title="胶着场（35-65%胜率）由 5 个 AI Agent 投票微调，鼠标悬停看每个 Agent 详细投票">AI 微调</th>';
-  html += '<th>场馆/日期</th>';
+  html += '<th title="时间已换算为北京时间">场馆/日期 (北京)</th>';
   html += '</tr></thead><tbody>';
   matches.forEach(m => html += knockoutRow(m, idField));
   html += '</tbody></table>';
@@ -2043,6 +2126,8 @@ async function renderKalshi() {
       `<div style="color:#ef4444">/api/kalshi 加载失败: ${e.message}</div>`;
     return;
   }
+  // 预热赛程索引，便于换算北京时间
+  await getScheduleIndex();
 
   const mk = d.market || {};
   const seriesUrl = mk.series_url || 'https://kalshi.com/markets/kxwcgame';
@@ -2070,8 +2155,16 @@ async function renderKalshi() {
     const overround = m.raw_overround_pct;
     const overroundColor = overround > 5 ? '#ef4444' : overround < -10 ? '#f59e0b' : '#888';
 
+    // 联表查 time_local/tz 换算北京时间（无匹配时回落到原 date）
+    const _ko = lookupKickoff(m.team_a, m.team_b, m.date);
+    let _bjCell = m.date, _bjTip = '';
+    if (_ko && _ko.time_local) {
+      const _bj = toBeijingTime(m.date, _ko.time_local, _ko.tz);
+      _bjCell = `${_bj.date} ${_bj.time}`;
+      _bjTip = ` title="场地当地：${_bj.raw}"`;
+    }
     return `<tr>
-      <td style="color:#888;font-size:11px">${m.date}</td>
+      <td style="color:#888;font-size:11px"${_bjTip}>${_bjCell}</td>
       <td><b>${zh(m.team_a)}</b></td>
       <td style="text-align:center">${wrap(pA + '%', maxIdx === 0)}</td>
       <td style="text-align:center;color:#888">${wrap(pD + '%', maxIdx === 1)}</td>
@@ -2088,7 +2181,7 @@ async function renderKalshi() {
   };
 
   const tableHead = `<thead><tr>
-    <th>日期</th><th>主队</th><th>主胜</th><th>平</th><th>客胜</th><th>客队</th>
+    <th title="北京时间（鼠标悬停看场地当地时间）">日期 (北京)</th><th>主队</th><th>主胜</th><th>平</th><th>客胜</th><th>客队</th>
     <th style="text-align:right">24h 量</th><th style="text-align:right">overround</th><th>入口</th>
   </tr></thead>`;
 
