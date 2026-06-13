@@ -164,6 +164,106 @@ def _serve_scheduler_state() -> dict:
     return out
 
 
+# ─────────────────────── /api/timeseries cascade 时间序列 ───────────────────────
+def _serve_timeseries(query: dict) -> dict:
+    """从 data/outputs/snapshots/timeseries.jsonl 读取并按 metric 抽取。
+
+    query 参数：
+      - metric: champion / final / semifinal / group_first / final_top （默认 champion）
+      - teams:  逗号分隔的球队过滤（可选；group_first/final_top 时忽略）
+      - limit:  返回最近 N 条（默认 200，最大 500）
+
+    返回：{points: [{ts, values}], metric, teams: [...], total: N}
+    """
+    try:
+        ts_path = DATA_OUTPUTS / "snapshots" / "timeseries.jsonl"
+        if not ts_path.exists():
+            return {"points": [], "metric": "", "teams": [],
+                    "note": "尚无快照（等待下一轮 cascade）"}
+
+        metric = (query.get("metric", ["champion"])[0] or "champion").strip()
+        valid_metrics = {"champion", "final", "semifinal", "quarterfinal",
+                         "round_of_16", "round_of_32",
+                         "group_first", "final_top"}
+        if metric not in valid_metrics:
+            return {"error": f"metric 必须是 {sorted(valid_metrics)}",
+                    "points": []}
+
+        try:
+            limit = int(query.get("limit", ["200"])[0])
+        except Exception:
+            limit = 200
+        limit = max(1, min(limit, 500))
+
+        teams_filter = (query.get("teams", [""])[0] or "").strip()
+        teams_set = (
+            {t.strip() for t in teams_filter.split(",") if t.strip()}
+            if teams_filter else None
+        )
+
+        # 从尾部读 limit 行
+        lines = ts_path.read_text().splitlines()
+        if not lines:
+            return {"points": [], "metric": metric, "teams": [],
+                    "note": "snapshot 为空"}
+        tail = lines[-limit:]
+
+        points = []
+        all_teams = set()
+        for line in tail:
+            try:
+                rec = json.loads(line)
+            except Exception:
+                continue
+            ts = rec.get("ts")
+            if not ts:
+                continue
+
+            if metric in ("champion", "final", "semifinal", "quarterfinal",
+                          "round_of_16", "round_of_32"):
+                vals = rec.get(metric, {}) or {}
+                if teams_set:
+                    vals = {t: v for t, v in vals.items() if t in teams_set}
+                all_teams.update(vals.keys())
+                points.append({"ts": ts, "values": vals})
+
+            elif metric == "group_first":
+                # 嵌套 {group: {team: pct}}，平铺成 {team: pct} 用于绘图
+                gf = rec.get("group_first", {}) or {}
+                flat = {}
+                for gname, gdict in gf.items():
+                    if not isinstance(gdict, dict):
+                        continue
+                    for team, pct in gdict.items():
+                        flat[team] = pct  # 队伍名唯一，直接平铺
+                if teams_set:
+                    flat = {t: v for t, v in flat.items() if t in teams_set}
+                all_teams.update(flat.keys())
+                points.append({"ts": ts, "values": flat})
+
+            elif metric == "final_top":
+                # final_top 是 list[{team_a, team_b, prob_pct, ...}]
+                # 用 "A vs B" 做 key，prob_pct 做值
+                top = rec.get("final_top", []) or []
+                vals = {}
+                for item in top:
+                    a = item.get("team_a"); b = item.get("team_b")
+                    p = item.get("prob_pct")
+                    if a and b and p is not None:
+                        vals[f"{a} vs {b}"] = p
+                all_teams.update(vals.keys())
+                points.append({"ts": ts, "values": vals})
+
+        return {
+            "points": points,
+            "metric": metric,
+            "teams": sorted(all_teams),
+            "total": len(points),
+        }
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}", "points": []}
+
+
 class APIHandler(SimpleHTTPRequestHandler):
     """统一处理静态 HTML + JSON API"""
     
@@ -221,6 +321,10 @@ class APIHandler(SimpleHTTPRequestHandler):
         # 调度状态：聚合 scheduler_state.json + live_state.current_stage + 最近 cascade summary
         if api_name == "scheduler":
             return self._send_json(_serve_scheduler_state())
+
+        # 时间序列：从 snapshots/timeseries.jsonl 抽取
+        if api_name == "timeseries":
+            return self._send_json(_serve_timeseries(query))
 
         # 动态推演 API（来自 tournament_api.py）
         dynamic_apis = {

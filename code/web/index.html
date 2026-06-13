@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>🏆 2026 WorldCup Engine Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 <style>
@@ -64,6 +67,8 @@
   <button class="tab-btn" data-tab="path">🛣 球队路径</button>
   <button class="tab-btn" data-tab="path_dist">🎲 多候选轨迹</button>
   <button class="tab-btn" data-tab="critical_compare">🔬 AI 微调影响</button>
+  <button class="tab-btn" data-tab="backtest">📈 历史回测表现</button>
+  <button class="tab-btn" data-tab="timeseries">📉 概率走势</button>
 </div>
 
 <style>
@@ -74,6 +79,14 @@
   .tab-btn.active { background: #ffd700; color: #1a1a2e; font-weight: bold; }
   .tab-content { display: none; }
   .tab-content.active { display: block; }
+  .trend-chips { margin-top: 8px; line-height: 1.9; }
+  .trend-chips .chip { display: inline-block; padding: 2px 9px; margin: 2px 3px;
+    border-radius: 12px; border: 1px solid rgba(255,215,0,0.35);
+    color: #ddd; font-size: 0.78em; cursor: pointer;
+    background: rgba(255,255,255,0.04); user-select: none; }
+  .trend-chips .chip:hover { background: rgba(255,215,0,0.18); }
+  .trend-chips .chip.selected { background: #ffd700; color: #1a1a2e; font-weight: bold; }
+  .stage-trend-card h2 .trend-toggle { font-size: 0.65em; color: #888; margin-left: 8px; }
   .match-row { display: grid; grid-template-columns: 2fr 1fr 2fr 1fr 1fr 1fr;
     gap: 10px; padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.1);
     align-items: center; }
@@ -119,7 +132,7 @@
   </div>
 
   <div class="card">
-    <h2>🏆 最可能决赛对阵 Top 10</h2>
+    <h2>🏆 最可能决赛对阵 Top 10 <span style="font-size:0.6em;color:#888;font-weight:normal;">（按 AI 综合排序，对照 MC 频次）</span></h2>
     <div id="chart-finals" class="chart"></div>
   </div>
 
@@ -130,11 +143,6 @@
       </span>
     </h2>
     <div id="scheduler-dashboard" class="loading">加载中...</div>
-  </div>
-
-  <div class="card">
-    <h2>📈 历史回测表现</h2>
-    <div id="backtest-info" class="loading">加载中...</div>
   </div>
 
   <div class="card full-width">
@@ -213,6 +221,16 @@
 
 <!-- ========== Tab: 小组赛 ========== -->
 <div id="tab-groups" class="tab-content">
+  <div class="card full-width stage-trend-card" data-stage="groups">
+    <h2 style="cursor:pointer;" onclick="toggleStageTrend('groups')">📉 小组第一概率走势 <span class="trend-toggle">▼</span></h2>
+    <div class="stage-trend-body">
+      <div class="subtitle" style="text-align:left;color:#888;font-size:0.85em;margin-bottom:8px;">
+        每次 cascade 后落帧。点击下方表格行可加入/移除趋势线。<span id="trend-groups-info" style="margin-left:10px;"></span>
+      </div>
+      <div id="trend-groups" style="height:260px;"></div>
+      <div id="trend-groups-chips" class="trend-chips"></div>
+    </div>
+  </div>
   <div class="card full-width">
     <h2>🅰️ 12 小组预测排名（按 Elo 排序）</h2>
     <div class="subtitle" style="text-align:left;color:#888;font-size:0.85em;margin-bottom:10px;">
@@ -235,6 +253,16 @@
 
 <!-- ========== Tab: R32 ========== -->
 <div id="tab-r32" class="tab-content">
+  <div class="card full-width stage-trend-card" data-stage="r32">
+    <h2 style="cursor:pointer;" onclick="toggleStageTrend('r32')">📉 进 16 强概率走势 <span class="trend-toggle">▼</span></h2>
+    <div class="stage-trend-body">
+      <div class="subtitle" style="text-align:left;color:#888;font-size:0.85em;margin-bottom:8px;">
+        默认显示 Top 10。点击下方表格行可加入/移除趋势线。<span id="trend-r32-info" style="margin-left:10px;"></span>
+      </div>
+      <div id="trend-r32" style="height:260px;"></div>
+      <div id="trend-r32-chips" class="trend-chips"></div>
+    </div>
+  </div>
   <div class="card full-width">
     <h2>🎯 1/16 决赛（16 场 · 32 队 → 16 队）</h2>
     <div id="r32-content" class="loading">加载中...</div>
@@ -243,6 +271,16 @@
 
 <!-- ========== Tab: R16 ========== -->
 <div id="tab-r16" class="tab-content">
+  <div class="card full-width stage-trend-card" data-stage="r16">
+    <h2 style="cursor:pointer;" onclick="toggleStageTrend('r16')">📉 进 8 强概率走势 <span class="trend-toggle">▼</span></h2>
+    <div class="stage-trend-body">
+      <div class="subtitle" style="text-align:left;color:#888;font-size:0.85em;margin-bottom:8px;">
+        默认显示 Top 10。点击下方表格行可加入/移除趋势线。<span id="trend-r16-info" style="margin-left:10px;"></span>
+      </div>
+      <div id="trend-r16" style="height:260px;"></div>
+      <div id="trend-r16-chips" class="trend-chips"></div>
+    </div>
+  </div>
   <div class="card full-width">
     <h2>⚔️ 1/8 决赛（8 场 · 16 队 → 8 队）</h2>
     <div id="r16-content" class="loading">加载中...</div>
@@ -251,6 +289,16 @@
 
 <!-- ========== Tab: QF ========== -->
 <div id="tab-qf" class="tab-content">
+  <div class="card full-width stage-trend-card" data-stage="qf">
+    <h2 style="cursor:pointer;" onclick="toggleStageTrend('qf')">📉 进 4 强概率走势 <span class="trend-toggle">▼</span></h2>
+    <div class="stage-trend-body">
+      <div class="subtitle" style="text-align:left;color:#888;font-size:0.85em;margin-bottom:8px;">
+        默认显示 Top 10。点击下方表格行可加入/移除趋势线。<span id="trend-qf-info" style="margin-left:10px;"></span>
+      </div>
+      <div id="trend-qf" style="height:260px;"></div>
+      <div id="trend-qf-chips" class="trend-chips"></div>
+    </div>
+  </div>
   <div class="card full-width">
     <h2>🥈 1/4 决赛（4 场 · 8 队 → 4 队）</h2>
     <div id="qf-content" class="loading">加载中...</div>
@@ -259,6 +307,16 @@
 
 <!-- ========== Tab: SF ========== -->
 <div id="tab-sf" class="tab-content">
+  <div class="card full-width stage-trend-card" data-stage="sf">
+    <h2 style="cursor:pointer;" onclick="toggleStageTrend('sf')">📉 进决赛概率走势 <span class="trend-toggle">▼</span></h2>
+    <div class="stage-trend-body">
+      <div class="subtitle" style="text-align:left;color:#888;font-size:0.85em;margin-bottom:8px;">
+        默认显示 Top 10。点击下方表格行可加入/移除趋势线。<span id="trend-sf-info" style="margin-left:10px;"></span>
+      </div>
+      <div id="trend-sf" style="height:260px;"></div>
+      <div id="trend-sf-chips" class="trend-chips"></div>
+    </div>
+  </div>
   <div class="card full-width">
     <h2>🥇 半决赛（2 场 · 4 队 → 2 队）</h2>
     <div id="sf-content" class="loading">加载中...</div>
@@ -267,6 +325,16 @@
 
 <!-- ========== Tab: 决赛 ========== -->
 <div id="tab-finals_tab" class="tab-content">
+  <div class="card full-width stage-trend-card" data-stage="finals_tab">
+    <h2 style="cursor:pointer;" onclick="toggleStageTrend('finals_tab')">📉 夺冠概率走势 <span class="trend-toggle">▼</span></h2>
+    <div class="stage-trend-body">
+      <div class="subtitle" style="text-align:left;color:#888;font-size:0.85em;margin-bottom:8px;">
+        默认显示 Top 10。点击下方表格行可加入/移除趋势线。<span id="trend-finals_tab-info" style="margin-left:10px;"></span>
+      </div>
+      <div id="trend-finals_tab" style="height:260px;"></div>
+      <div id="trend-finals_tab-chips" class="trend-chips"></div>
+    </div>
+  </div>
   <div class="card full-width">
     <h2>🏆 决赛 + 季军赛</h2>
     <div id="finals-content" class="loading">加载中...</div>
@@ -325,6 +393,49 @@
   </div>
 </div>
 
+<!-- ========== Tab: 历史回测表现 ========== -->
+<div id="tab-backtest" class="tab-content">
+  <div class="card full-width">
+    <h2>📈 历史回测表现</h2>
+    <div class="subtitle" style="text-align:left;color:#888;font-size:0.85em;margin-bottom:10px;">
+      在历史比赛上回测本引擎概率预测：Brier 分数（越低越好）、命中率与基准对比。
+      数据由 <code>code/backtest/run_backtest.py</code> 生成。
+    </div>
+    <div id="backtest-info" class="loading">加载中...</div>
+  </div>
+</div>
+
+<!-- ========== Tab: 概率走势（cascade 时间序列） ========== -->
+<div id="tab-timeseries" class="tab-content">
+  <div class="card full-width">
+    <h2>📉 概率走势：每次调度后的变化</h2>
+    <div class="subtitle" style="text-align:left;color:#888;font-size:0.85em;margin-bottom:10px;">
+      每次 cascade 完成后落一帧，展示夺冠/决赛/半决赛/小组第一概率随时间的演化。
+      数据源：<code>data/outputs/snapshots/timeseries.jsonl</code>
+    </div>
+
+    <div style="margin-bottom:10px;">
+      <label>指标：
+        <select id="ts-metric" onchange="renderTimeseries()">
+          <option value="champion">夺冠概率</option>
+          <option value="final">进决赛</option>
+          <option value="semifinal">进半决赛</option>
+          <option value="group_first">小组第一</option>
+          <option value="final_top">决赛对阵 Top</option>
+        </select>
+      </label>
+      &nbsp;&nbsp;
+      <label>球队过滤（逗号分隔，留空=Top 10）：
+        <input id="ts-teams" placeholder="如 Spain,France,Brazil" style="width:280px;" />
+      </label>
+      <button onclick="renderTimeseries()">刷新</button>
+    </div>
+
+    <div id="ts-chart" style="height:500px;"></div>
+    <div id="ts-info" style="margin-top:10px;font-size:0.9em;color:#888;">加载中...</div>
+  </div>
+</div>
+
 <div class="footer">
   WorldCup Engine v2.0 · 17-Agent Swarm · 8 AI Agents<br>
   Data: eloratings.net + Polymarket + StatsBomb + Transfermarkt + martj42
@@ -333,7 +444,9 @@
 <script>
 // 加载数据
 async function fetchJSON(url) {
-  const r = await fetch(url);
+  // 防浏览器缓存：query 串加时间戳 + no-store
+  const sep = url.includes('?') ? '&' : '?';
+  const r = await fetch(url + sep + '_t=' + Date.now(), { cache: 'no-store' });
   return r.json();
 }
 
@@ -354,11 +467,15 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
       match: setupMatchForm, path: setupPathForm,
       path_dist: renderPathDist,
       critical_compare: renderCriticalCompare,
+      timeseries: renderTimeseries,
     }[tab];
     if (loader && !btn.dataset.loaded) {
       loader();
       btn.dataset.loaded = '1';
     }
+    // 阶段 tab：每次切入都尝试刷新趋势图（不阻塞主 loader）
+    const stageMetric = STAGE_TREND_METRIC[tab];
+    if (stageMetric) { renderStageTrend(tab); }
   });
 });
 
@@ -1290,24 +1407,66 @@ async function renderScenarios() {
 // === 3. 决赛对阵 Top 10 ===
 async function renderFinals() {
   const data = await fetchJSON('/api/finals');
-  const top = data.top_matchups.slice(0, 10).reverse();
-  
+  // 拉 synthesizer 做 AI 综合口径加权（含 8 项 AI 修正）
+  // 失败则回退到纯 MC 口径，保证主流程不受影响
+  let synth = null;
+  try { synth = await fetchJSON('/api/synthesizer'); } catch(e) { synth = null; }
+
+  const raw = data.top_matchups.slice(0, 10);
+  // AI 综合 prob：用 advance_to_final[A] * advance_to_final[B] 作独立近似，再归一化
+  let ai_total = 0;
+  const enriched = raw.map(m => {
+    const pa = synth && synth[m.team_a] ? (synth[m.team_a].advance_to_final || 0) : 0;
+    const pb = synth && synth[m.team_b] ? (synth[m.team_b].advance_to_final || 0) : 0;
+    const ai_raw = (pa / 100) * (pb / 100);
+    ai_total += ai_raw;
+    return { ...m, _ai_raw: ai_raw };
+  });
+  // 归一化到 raw top_matchups 概率总和（保持与 MC 相同的量级，便于对照）
+  const mc_sum = raw.reduce((s, m) => s + m.probability, 0);
+  enriched.forEach(m => {
+    m._ai_prob = ai_total > 0 ? (m._ai_raw / ai_total) * mc_sum : m.probability;
+  });
+  // 按 AI 综合 prob 重排（如果 synth 拿不到，则保持 MC 原序）
+  if (synth) enriched.sort((a, b) => b._ai_prob - a._ai_prob);
+
+  const top = enriched.reverse();  // ECharts y 轴从下到上，倒序使最大在顶
+  const labels = top.map(m => `${zhShort(m.team_a)} vs ${zhShort(m.team_b)}`);
+
   echarts.init(document.getElementById('chart-finals'), 'dark').setOption({
     backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis' },
-    grid: { containLabel: true },
-    xAxis: { type: 'value', axisLabel: {color: '#aaa', formatter: '{value}%'} },
-    yAxis: { 
-      type: 'category', 
-      data: top.map(m => `${zhShort(m.team_a)} vs ${zhShort(m.team_b)}`),
-      axisLabel: {color: '#ccc'}
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        const idx = params[0].dataIndex;
+        const m = top[idx];
+        const ai = (m._ai_prob * 100).toFixed(2);
+        const mc = (m.probability * 100).toFixed(2);
+        return `<b>${zhShort(m.team_a)} vs ${zhShort(m.team_b)}</b><br/>` +
+               `AI 综合: <b style="color:#ffd700">${ai}%</b><br/>` +
+               `MC 频次: <span style="color:#888">${mc}%</span>`;
+      }
     },
-    series: [{
-      type: 'bar',
-      data: top.map(m => (m.probability * 100).toFixed(2)),
-      itemStyle: { color: '#ffd700' },
-      label: { show: true, position: 'right', color: '#fff', formatter: '{c}%' }
-    }]
+    legend: { data: ['AI 综合（含 8 项修正）', 'MC 频次（纯统计）'], textStyle: {color: '#ccc'}, top: 0 },
+    grid: { containLabel: true, top: 30 },
+    xAxis: { type: 'value', axisLabel: {color: '#aaa', formatter: '{value}%'} },
+    yAxis: { type: 'category', data: labels, axisLabel: {color: '#ccc'} },
+    series: [
+      {
+        name: 'AI 综合（含 8 项修正）',
+        type: 'bar',
+        data: top.map(m => (m._ai_prob * 100).toFixed(2)),
+        itemStyle: { color: '#ffd700' },
+        label: { show: true, position: 'right', color: '#fff', formatter: '{c}%' }
+      },
+      {
+        name: 'MC 频次（纯统计）',
+        type: 'bar',
+        data: top.map(m => (m.probability * 100).toFixed(2)),
+        itemStyle: { color: '#60a5fa' },
+        label: { show: true, position: 'right', color: '#aaa', formatter: '{c}%' }
+      }
+    ]
   });
 }
 
@@ -1766,6 +1925,210 @@ async function renderBacktest() {
   }
 }
 
+// === 5b. 概率走势（cascade 时间序列） ===
+let _tsChart = null;
+async function renderTimeseries() {
+  const metricEl = document.getElementById('ts-metric');
+  const teamsEl  = document.getElementById('ts-teams');
+  const info     = document.getElementById('ts-info');
+  const chartEl  = document.getElementById('ts-chart');
+  if (!metricEl || !chartEl) return;
+
+  const metric = metricEl.value;
+  const teams  = teamsEl.value.trim();
+  info.textContent = '加载中...';
+
+  try {
+    const url = `/api/timeseries?metric=${metric}` +
+                (teams ? `&teams=${encodeURIComponent(teams)}` : '') +
+                `&limit=200`;
+    const data = await fetchJSON(url);
+    const pts = data.points || [];
+    if (data.error) {
+      info.textContent = '加载失败：' + data.error;
+      return;
+    }
+    if (pts.length === 0) {
+      info.textContent = data.note || '尚无快照（等待下一轮 cascade）';
+      if (_tsChart) { _tsChart.clear(); }
+      return;
+    }
+
+    const xs = pts.map(p => p.ts.replace('T', ' '));
+
+    // 选要画的 series：用户指定 teams 则用之；否则取最后一帧 Top 10
+    let teamList = teams ? teams.split(',').map(s => s.trim()).filter(Boolean) : null;
+    if (!teamList || !teamList.length) {
+      const last = pts[pts.length - 1].values || {};
+      teamList = Object.entries(last)
+                       .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+                       .slice(0, 10).map(x => x[0]);
+    }
+
+    const yLabel = metric === 'final_top' ? '决赛对阵概率 (%)' : '概率 (%)';
+    const series = teamList.map(name => ({
+      name,
+      type: 'line',
+      smooth: true,
+      symbolSize: 5,
+      data: pts.map(p => (p.values && p.values[name] != null) ? p.values[name] : null),
+      connectNulls: true,
+    }));
+
+    if (!_tsChart) {
+      _tsChart = echarts.init(chartEl);
+      window.addEventListener('resize', () => _tsChart && _tsChart.resize());
+    }
+    _tsChart.setOption({
+      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+      legend:  { type: 'scroll', top: 0, textStyle: { color: '#ccc' } },
+      grid:    { left: 60, right: 30, top: 50, bottom: 70 },
+      xAxis:   {
+        type: 'category', data: xs,
+        axisLabel: { rotate: 45, color: '#aaa', fontSize: 10 },
+      },
+      yAxis:   {
+        type: 'value', name: yLabel,
+        nameTextStyle: { color: '#aaa' },
+        axisLabel: { color: '#aaa' },
+      },
+      series,
+    }, true);
+
+    info.textContent =
+      `${pts.length} 帧 · ${teamList.length} 队 · ` +
+      `最早 ${xs[0]} → 最新 ${xs[xs.length-1]}`;
+  } catch (e) {
+    info.textContent = '加载失败：' + e.message;
+  }
+}
+
+// === 5c. 阶段 tab 顶部趋势小图（联动每个阶段的概率） ===
+// stage(tab name) → API metric 映射
+const STAGE_TREND_METRIC = {
+  groups:     'group_first',
+  r32:        'round_of_16',
+  r16:        'quarterfinal',
+  qf:         'semifinal',
+  sf:         'final',
+  finals_tab: 'champion',
+};
+const STAGE_TREND_LABEL = {
+  groups: '小组第一概率', r32: '进 16 强',
+  r16: '进 8 强', qf: '进 4 强',
+  sf: '进决赛', finals_tab: '夺冠',
+};
+// 每个阶段的 ECharts 实例 + 用户选中的额外队伍集合
+const _stageTrendCharts = {};
+const _stageTrendSelected = {};  // {stage -> Set<team>}
+
+async function renderStageTrend(stage) {
+  const metric = STAGE_TREND_METRIC[stage];
+  if (!metric) return;
+  const containerId = `trend-${stage}`;
+  const infoId      = `trend-${stage}-info`;
+  const container = document.getElementById(containerId);
+  const info      = document.getElementById(infoId);
+  if (!container) return;
+
+  try {
+    const url = `/api/timeseries?metric=${metric}&limit=200`;
+    const data = await fetchJSON(url);
+    const pts = data.points || [];
+    if (data.error || pts.length === 0) {
+      if (info) info.textContent = data.note || data.error || '尚无快照';
+      return;
+    }
+    const xs = pts.map(p => p.ts.replace('T', ' ').slice(5));  // MM-DD HH:MM:SS
+
+    // Top 10 by 最后一帧值，加上用户主动选中的额外队
+    const last = pts[pts.length - 1].values || {};
+    const top10 = Object.entries(last)
+                        .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+                        .slice(0, 10).map(x => x[0]);
+    const selected = _stageTrendSelected[stage] || new Set();
+    const teamList = Array.from(new Set([...top10, ...selected]));
+
+    const series = teamList.map(name => ({
+      name,
+      type: 'line', smooth: true, symbolSize: 4,
+      data: pts.map(p => (p.values && p.values[name] != null) ? p.values[name] : null),
+      connectNulls: true,
+      lineStyle: selected.has(name) ? { width: 3 } : {},
+    }));
+
+    let chart = _stageTrendCharts[stage];
+    if (!chart) {
+      chart = echarts.init(container);
+      _stageTrendCharts[stage] = chart;
+      window.addEventListener('resize', () => chart && chart.resize());
+    }
+    chart.setOption({
+      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+      legend:  { type: 'scroll', top: 0, textStyle: { color: '#ccc', fontSize: 11 } },
+      grid:    { left: 50, right: 20, top: 35, bottom: 50 },
+      xAxis:   {
+        type: 'category', data: xs,
+        axisLabel: { rotate: 30, color: '#aaa', fontSize: 9 },
+      },
+      yAxis:   {
+        type: 'value', name: STAGE_TREND_LABEL[stage] + ' (%)',
+        nameTextStyle: { color: '#aaa', fontSize: 10 },
+        axisLabel: { color: '#aaa' },
+      },
+      series,
+    }, true);
+
+    if (info) {
+      info.textContent =
+        `${pts.length} 帧 · 最早 ${xs[0]} → 最新 ${xs[xs.length-1]}`;
+    }
+
+    // 渲染 chip 选择栏（按最后一帧值降序 Top 30）
+    const chips = document.getElementById(`trend-${stage}-chips`);
+    if (chips) {
+      const top30 = Object.entries(last)
+                          .sort((a, b) => (b[1] || 0) - (a[1] || 0))
+                          .slice(0, 30);
+      chips.innerHTML = top30.map(([t, v]) => {
+        const sel = teamList.includes(t) ? ' selected' : '';
+        const safe = t.replace(/'/g, "\\'");
+        const display = (window.TEAM_ZH && TEAM_ZH[t]) ? `${t} (${TEAM_ZH[t]})` : t;
+        return `<span class="chip${sel}" onclick="toggleTeamInStageTrend('${stage}','${safe}')" title="${v.toFixed(2)}%">${display}</span>`;
+      }).join('');
+    }
+  } catch (e) {
+    if (info) info.textContent = '加载失败：' + e.message;
+  }
+}
+
+function toggleStageTrend(stage) {
+  const card = document.querySelector(`.stage-trend-card[data-stage="${stage}"]`);
+  if (!card) return;
+  const body = card.querySelector('.stage-trend-body');
+  const tog  = card.querySelector('.trend-toggle');
+  if (!body) return;
+  const collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? '' : 'none';
+  if (tog) tog.textContent = collapsed ? '▼' : '▶';
+  // 展开时如果还没渲染过，触发一次（resize 修正布局）
+  if (collapsed) {
+    setTimeout(() => {
+      if (_stageTrendCharts[stage]) _stageTrendCharts[stage].resize();
+      else renderStageTrend(stage);
+    }, 50);
+  }
+}
+
+// 表格行点击 → 把该队加/去 stage trend selected 集合，重绘
+function toggleTeamInStageTrend(stage, team) {
+  if (!stage || !team) return;
+  if (!_stageTrendSelected[stage]) _stageTrendSelected[stage] = new Set();
+  const s = _stageTrendSelected[stage];
+  if (s.has(team)) s.delete(team); else s.add(team);
+  renderStageTrend(stage);
+}
+
 // === 6. 决赛对阵热力图 ===
 async function renderHeatmap() {
   const data = await fetchJSON('/api/finals');
@@ -1826,8 +2189,8 @@ Promise.all([
   renderHeatmap()
 ]).catch(e => console.error('加载失败:', e));
 
-// ── 调度仪表盘动态刷新：10s 轮询 + 倒计时 + 上次刷新指示
-const SCHED_REFRESH_MS = 10000;
+// ── 调度仪表盘动态刷新：60s 轮询 + 倒计时 + 上次刷新指示
+const SCHED_REFRESH_MS = 60000;
 let _schedLastRefresh = Date.now();
 let _schedRefreshing = false;
 

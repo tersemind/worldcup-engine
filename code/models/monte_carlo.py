@@ -66,7 +66,9 @@ def simulate_match(team_a_data: dict, team_b_data: dict, allow_draw: bool = True
                     rng: np.random.Generator = None,
                     defending_champion: str = DEFENDING_CHAMPION,
                     defending_penalty: float = DEFENDING_PENALTY,
-                    apply_critical_adj: bool = True) -> str:
+                    apply_critical_adj: bool = True,
+                    elo_shifts: dict = None,
+                    match_shifts: dict = None) -> str:
     """
     模拟一场比赛
     返回赢家球队名（如果不允许平局，平局会用 Elo 加权随机决出）
@@ -78,11 +80,36 @@ def simulate_match(team_a_data: dict, team_b_data: dict, allow_draw: bool = True
         defending_penalty: 卫冕冠军每场淘汰赛胜率乘数 (0.95 = -5%)
         apply_critical_adj: 是否在淘汰赛应用 critical_node_adjustments
                             （仅淘汰赛生效；小组赛不应用）
+        elo_shifts: {team_name: delta_elo} 队级 AI 加权 Elo 加成（阶段 1/2 事件级）。
+                    None 时行为不变（默认）；非 None 时把每队 elo 加上 ΔE 再算胜率。
+        match_shifts: {(team_a_name, team_b_name): (delta_a, delta_b)} 比赛级 ΔElo（阶段 2）。
+                    支持反向查找 (B,A) → (delta_b, delta_a)；None 时不影响。
+                    用于按场注入 H2H/referee/weather/lineups 4 项调整。
     """
     if rng is None:
         rng = np.random.default_rng()
-    
-    p = match_probabilities(team_a_data["elo"], team_b_data["elo"])
+
+    elo_a = team_a_data["elo"]
+    elo_b = team_b_data["elo"]
+    a_name = team_a_data.get("name")
+    b_name = team_b_data.get("name")
+    # AI 加权 Elo 偏移（阶段 1/2）：队级
+    # elo_shifts is None 时完全不影响 → 现系统行为保留
+    if elo_shifts:
+        elo_a = elo_a + elo_shifts.get(a_name, 0.0)
+        elo_b = elo_b + elo_shifts.get(b_name, 0.0)
+    # 比赛级（阶段 2）：每对 (A,B) 单独叠加。支持反向查找。
+    if match_shifts and a_name and b_name:
+        ms = match_shifts.get((a_name, b_name))
+        if ms is None:
+            ms_rev = match_shifts.get((b_name, a_name))
+            if ms_rev is not None:
+                ms = (ms_rev[1], ms_rev[0])
+        if ms is not None:
+            elo_a += ms[0]
+            elo_b += ms[1]
+
+    p = match_probabilities(elo_a, elo_b)
     r = rng.random()
     
     if allow_draw:
@@ -130,9 +157,15 @@ def simulate_match(team_a_data: dict, team_b_data: dict, allow_draw: bool = True
             return team_b_data["name"]
 
 
-def simulate_group(group_teams: list, teams_data: dict, rng: np.random.Generator) -> list:
+def simulate_group(group_teams: list, teams_data: dict, rng: np.random.Generator,
+                    elo_shifts: dict = None,
+                    match_shifts: dict = None) -> list:
     """
     模拟一个 4 队小组的全 6 场比赛，返回排名（含积分、净胜球估算）
+
+    Args:
+        elo_shifts: 透传给 simulate_match（AI 加权队级 ΔE）
+        match_shifts: 透传给 simulate_match（AI 加权比赛级 ΔE，按 (A,B) 索引）
     """
     points = {t: 0 for t in group_teams}
     goals_for = {t: 0 for t in group_teams}
@@ -151,7 +184,8 @@ def simulate_group(group_teams: list, teams_data: dict, rng: np.random.Generator
     for team_a, team_b in matches:
         ta = {"name": team_a, **teams_data[team_a]}
         tb = {"name": team_b, **teams_data[team_b]}
-        result = simulate_match(ta, tb, allow_draw=True, rng=rng)
+        result = simulate_match(ta, tb, allow_draw=True, rng=rng,
+                                 elo_shifts=elo_shifts, match_shifts=match_shifts)
         
         # 用 Elo 期望差近似估算比分 → 用于净胜球计算
         elo_diff = ta["elo"] - tb["elo"]
@@ -268,7 +302,9 @@ def build_round_of_32_matchups(group_winners: dict, group_runners_up: dict, best
 
 def simulate_tournament(teams_data: dict, groups: dict, rng: np.random.Generator,
                          bracket: dict = None,
-                         return_bracket: bool = False) -> dict:
+                         return_bracket: bool = False,
+                         elo_shifts: dict = None,
+                         match_shifts: dict = None) -> dict:
     """
     模拟一届完整世界杯（使用真实 FIFA 2026 bracket）
     
@@ -299,7 +335,8 @@ def simulate_tournament(teams_data: dict, groups: dict, rng: np.random.Generator
     for g_id, g_teams in groups.items():
         for t in g_teams:
             all_teams.add(t)
-        standings = simulate_group(g_teams, teams_data, rng)
+        standings = simulate_group(g_teams, teams_data, rng,
+                                    elo_shifts=elo_shifts, match_shifts=match_shifts)
         group_winners[g_id] = standings[0][0]
         group_runners_up[g_id] = standings[1][0]
         third_place.append((standings[2][0], standings[2][1], standings[2][2], standings[2][3], g_id))
@@ -328,7 +365,8 @@ def simulate_tournament(teams_data: dict, groups: dict, rng: np.random.Generator
     for ta_name, tb_name, match_id in matchups_r32:
         ta = {"name": ta_name, **teams_data[ta_name]}
         tb = {"name": tb_name, **teams_data[tb_name]}
-        winner = simulate_match(ta, tb, allow_draw=False, rng=rng)
+        winner = simulate_match(ta, tb, allow_draw=False, rng=rng,
+                                 elo_shifts=elo_shifts, match_shifts=match_shifts)
         match_winners[match_id] = winner
         advancers.append(winner)
         r32_records.append((match_id, ta_name, tb_name, winner))
@@ -347,7 +385,8 @@ def simulate_tournament(teams_data: dict, groups: dict, rng: np.random.Generator
             continue
         ta = {"name": ta_name, **teams_data[ta_name]}
         tb = {"name": tb_name, **teams_data[tb_name]}
-        winner = simulate_match(ta, tb, allow_draw=False, rng=rng)
+        winner = simulate_match(ta, tb, allow_draw=False, rng=rng,
+                                 elo_shifts=elo_shifts, match_shifts=match_shifts)
         r16_match_winners[r16_id] = winner
         r16_winners.append(winner)
         r16_records.append((r16_id, ta_name, tb_name, winner))
@@ -366,7 +405,8 @@ def simulate_tournament(teams_data: dict, groups: dict, rng: np.random.Generator
             continue
         ta = {"name": ta_name, **teams_data[ta_name]}
         tb = {"name": tb_name, **teams_data[tb_name]}
-        winner = simulate_match(ta, tb, allow_draw=False, rng=rng)
+        winner = simulate_match(ta, tb, allow_draw=False, rng=rng,
+                                 elo_shifts=elo_shifts, match_shifts=match_shifts)
         qf_match_winners[qf_id] = winner
         qf_winners.append(winner)
         qf_records.append((qf_id, ta_name, tb_name, winner))
@@ -385,7 +425,8 @@ def simulate_tournament(teams_data: dict, groups: dict, rng: np.random.Generator
             continue
         ta = {"name": ta_name, **teams_data[ta_name]}
         tb = {"name": tb_name, **teams_data[tb_name]}
-        winner = simulate_match(ta, tb, allow_draw=False, rng=rng)
+        winner = simulate_match(ta, tb, allow_draw=False, rng=rng,
+                                 elo_shifts=elo_shifts, match_shifts=match_shifts)
         sf_match_winners[sf_id] = winner
         sf_winners.append(winner)
         sf_records.append((sf_id, ta_name, tb_name, winner))
@@ -404,7 +445,8 @@ def simulate_tournament(teams_data: dict, groups: dict, rng: np.random.Generator
     ]
     ta = {"name": finalists[0], **teams_data[finalists[0]]}
     tb = {"name": finalists[1], **teams_data[finalists[1]]}
-    champion = simulate_match(ta, tb, allow_draw=False, rng=rng)
+    champion = simulate_match(ta, tb, allow_draw=False, rng=rng,
+                                elo_shifts=elo_shifts, match_shifts=match_shifts)
     runner_up = finalists[0] if champion == finalists[1] else finalists[1]
     
     # ============ 8. 阶段标记（按最深进入轮次）============
@@ -434,13 +476,19 @@ def simulate_tournament(teams_data: dict, groups: dict, rng: np.random.Generator
 
 
 def run_monte_carlo(n_simulations: int = 100000, seed: int = 42, verbose: bool = True,
-                     return_finals: bool = False) -> dict:
+                     return_finals: bool = False,
+                     elo_shifts: dict = None,
+                     match_shifts: dict = None) -> dict:
     """
     执行 N 次蒙特卡洛模拟（使用真实 FIFA 2026 bracket）
     返回每队在各阶段的概率
     
     Args:
         return_finals: True 时额外返回所有决赛对阵的频次（用于热力图）
+        elo_shifts: {team: delta_elo} 队级 AI 加权 Elo 偏移（阶段 1/2 事件级）。
+                    None 时行为不变（默认）。
+        match_shifts: {(team_a, team_b): (delta_a, delta_b)} 比赛级 AI 加权
+                    Elo 偏移（阶段 2）。None 时不影响。
     """
     teams = load_teams()
     groups = load_groups()
@@ -461,7 +509,9 @@ def run_monte_carlo(n_simulations: int = 100000, seed: int = 42, verbose: bool =
         if verbose and (sim_idx + 1) % max(1, n_simulations // 10) == 0:
             print(f"  Progress: {sim_idx + 1}/{n_simulations} ({(sim_idx+1)/n_simulations*100:.0f}%)")
         
-        result = simulate_tournament(qualified_teams, groups, rng, bracket=bracket)
+        result = simulate_tournament(qualified_teams, groups, rng, bracket=bracket,
+                                       elo_shifts=elo_shifts,
+                                       match_shifts=match_shifts)
         for team, stage in result.items():
             if team in stage_counts:
                 stage_counts[team][stage] += 1

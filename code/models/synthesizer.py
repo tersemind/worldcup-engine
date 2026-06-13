@@ -114,6 +114,19 @@ def synthesize(mc_probs: dict, adjustments: dict = None, use_injuries: bool = Tr
         lineup_adjs = get_lineup_adjustments()
     except Exception:
         pass  # 文件缺失或解析失败 → 不打扰主合成
+
+    # adj_bracket：研究分支（默认关闭，证实会与 mc_baseline 双重计数）
+    # 历史：路径 A 实现尝试加进 8 项 adj，但 mc_baseline 已含 bracket 信息，
+    # 再叠加 adj_bracket 会让 MC 与 synth 残差从 0.93 → 1.19pp（劣化）
+    # 设 ENABLE_ADJ_BRACKET=1 可强制启用以做对比实验
+    import os as _os
+    bracket_adjs: dict = {}
+    if _os.environ.get("ENABLE_ADJ_BRACKET") == "1":
+        try:
+            from models.bracket_difficulty import get_bracket_adjustments
+            bracket_adjs = get_bracket_adjustments(latest_teams)
+        except Exception:
+            pass
     
     results = {}
     # 预计算 Transfermarkt 身价中位数（用于 squad_value 调整）
@@ -154,10 +167,12 @@ def synthesize(mc_probs: dict, adjustments: dict = None, use_injuries: bool = Tr
         adj_referee = referee_adjs.get(team, 0.0)
         adj_weather = weather_adjs.get(team, 0.0)
         adj_lineups = lineup_adjs.get(team, 0.0)
+        adj_bracket = bracket_adjs.get(team, 0.0)
 
         # 调整：每个因子按百分点叠加
         adj_total = (adj["health"] + adj["context"] + adj["psych"] + adj_squad
-                     + adj_h2h + adj_referee + adj_weather + adj_lineups) / 100.0
+                     + adj_h2h + adj_referee + adj_weather + adj_lineups
+                     + adj_bracket) / 100.0
         adjusted = base + adj_total
         adjusted = max(0.001, min(0.50, adjusted))  # 边界
         
@@ -183,6 +198,7 @@ def synthesize(mc_probs: dict, adjustments: dict = None, use_injuries: bool = Tr
             "adj_referee": round(adj_referee, 2),
             "adj_weather": round(adj_weather, 2),
             "adj_lineups": round(adj_lineups, 2),
+            "adj_bracket": round(adj_bracket, 2),
             "final_probability": round(adjusted * 100, 2),
             "ci_lower": round(ci_low * 100, 2),
             "ci_upper": round(ci_high * 100, 2),
@@ -195,8 +211,89 @@ def synthesize(mc_probs: dict, adjustments: dict = None, use_injuries: bool = Tr
             "advance_to_qf": round(mc_data["quarterfinal"] * 100, 2),
             "advance_to_r16": round(mc_data["round_of_16"] * 100, 2),
         }
-    
+
+    # ===== 概率质量归一化（市场锚定收缩 + Top-K 重分配）=====
+    # 问题：mc_baseline 来自 Reference 6-桶校准（每队独立 +1.5pp 厚尾补偿，sum≈161%），
+    #       synth 在此之上加 8 项 adj 仍不归一，rank 9-16 总和达 35%（市场仅 12%）。
+    # 方案：对 Rank>=K 的队伍朝市场收缩 (p_new = p*α + market*(1-α))，
+    #       释放的 mass 按 Top-K synth 比例分回 Top-K，再整体归一到 100%。
+    # 失败必须不影响主流程。
+    try:
+        results = _redistribute_mass(results, alpha=0.30, top_k=8)
+    except Exception:
+        pass
+
     return results
+
+
+def _redistribute_mass(results: dict, alpha: float = 0.30, top_k: int = 8) -> dict:
+    """
+    市场锚定收缩 + Top-K 重分配。
+    
+    Args:
+        results: synthesize 输出 dict {team: {final_probability, market_implied, ...}}
+        alpha: 收缩系数。Rank>=K 的队伍 p_new = p*α + market*(1-α)。
+               α=1 不收缩，α=0 完全等于市场。默认 0.30 (保留 30% model 信号)
+        top_k: 保护的 top 排名个数。Rank<K 不被收缩，反而吃下重分配的 mass
+    
+    保留字段：
+        final_probability_raw: 收缩前的原值（审计用）
+        bias_pp: 用 final_probability 重新计算
+    """
+    if not results:
+        return results
+    
+    items = sorted(results.items(), key=lambda x: -x[1]["final_probability"])
+    n = len(items)
+    if n < top_k + 1:
+        return results  # 队伍太少，不做收缩
+    
+    # Step 1: 计算收缩后值，统计释放的 mass
+    new_p = {}
+    saved_mass = 0.0
+    for i, (t, d) in enumerate(items):
+        p_old = d["final_probability"]
+        new_p[t] = p_old  # 默认保留
+        if i >= top_k:
+            market = d.get("market_implied", 0.0)
+            p_shrunk = p_old * alpha + market * (1 - alpha)
+            new_p[t] = p_shrunk
+            saved_mass += (p_old - p_shrunk)
+    
+    # Step 2: 把 saved_mass 按当前 Top-K synth 比例分回 Top-K
+    top_total = sum(items[i][1]["final_probability"] for i in range(top_k))
+    if top_total > 0 and saved_mass > 0:
+        for i in range(top_k):
+            t = items[i][0]
+            share = items[i][1]["final_probability"] / top_total
+            new_p[t] += saved_mass * share
+    
+    # Step 3: 整体归一化到 100%
+    total = sum(new_p.values())
+    if total <= 0:
+        return results
+    scale = 100.0 / total
+    
+    # Step 4: 写回 results，保留 raw 审计字段，重算 bias_pp / CI
+    out = {}
+    for t, d in results.items():
+        d_new = dict(d)
+        raw = d["final_probability"]
+        d_new["final_probability_raw"] = raw
+        normalized = round(new_p[t] * scale, 2)
+        d_new["final_probability"] = normalized
+        # bias_pp 用 normalized 重新计算（market_implied 已是 % 单位）
+        d_new["bias_pp"] = round(normalized - d.get("market_implied", 0.0), 2)
+        # confidence_level 也跟着 normalized 走
+        d_new["confidence_level"] = confidence_level(normalized / 100.0)
+        # CI 按比例缩放，保持原宽度的相对感（避免 ci_lower > final 的不一致）
+        if raw > 0:
+            ratio = normalized / raw
+            d_new["ci_lower"] = round(d.get("ci_lower", 0.0) * ratio, 2)
+            d_new["ci_upper"] = round(d.get("ci_upper", 0.0) * ratio, 2)
+            d_new["ci_width"] = round(d_new["ci_upper"] - d_new["ci_lower"], 2)
+        out[t] = d_new
+    return out
 
 
 def print_report(results: dict, top_n: int = 12):
