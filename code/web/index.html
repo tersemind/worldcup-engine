@@ -134,6 +134,7 @@
   <div class="card full-width">
     <h2>
       📊 冠军概率排名（综合预测）
+      <span id="champion-channel-switcher" style="margin-left:10px;font-weight:normal;"></span>
       <span id="champion-channel-hint" style="font-size:0.5em;font-weight:normal;color:#888;margin-left:10px;"></span>
     </h2>
     <div id="chart-champion" class="chart-tall"></div>
@@ -583,8 +584,8 @@ function previewLine(m) {
 
 // ============ 小组赛 ============
 async function renderGroups() {
-  const d = await fetchJSON(withChannel('/api/groups'));
-  let html = '';
+  const d = await fetchJSON(withChannelFor('groups', '/api/groups'));
+  let html = `<div style="margin-bottom:10px;">${tabChannelSwitcherHTML('groups', '通道')}</div>`;
   if (d.method) {
     html += `<p style="color:#aaa;margin-bottom:10px;">排序方式：<span style="color:#4ade80">[${d.method}]</span></p>`;
   }
@@ -622,14 +623,17 @@ async function renderGroups() {
     html += '</tbody></table>';
   }
   document.getElementById('groups-content').innerHTML = html;
+  _syncChannelButtons();
 }
 
 // ============ 72 场赛程（含实际比分 + 预测）============
 async function renderGroupSchedule() {
-  const d = await fetchJSON('/api/group_schedule');
+  const d = await fetchJSON(withChannelFor('group_schedule', '/api/group_schedule'));
   if (d.error) {
     document.getElementById('group-schedule-content').innerHTML =
+      `<div style="margin-bottom:10px;">${tabChannelSwitcherHTML('group_schedule', '通道')}</div>` +
       `<div style="color:#f87171;padding:20px;">${d.error}</div>`;
+    _syncChannelButtons();
     return;
   }
 
@@ -679,7 +683,8 @@ async function renderGroupSchedule() {
       <span style="color:#666;margin-left:8px;font-size:0.85em">（点击有 ▾伤 标记的行查看详情）</span>
     </div>` : '';
 
-  let html = `<div style="background:rgba(74,222,128,0.08);padding:12px;border-radius:8px;margin-bottom:20px;">
+  let html = `<div style="margin-bottom:10px;">${tabChannelSwitcherHTML('group_schedule', '通道')}</div>`;
+  html += `<div style="background:rgba(74,222,128,0.08);padding:12px;border-radius:8px;margin-bottom:20px;">
     <strong style="color:#4ade80">${d.n_played}</strong> 场已结束 ·
     <strong style="color:#fbbf24">${d.n_scheduled}</strong> 场待赛 ·
     共 ${d.n_matches} 场
@@ -919,6 +924,7 @@ async function renderGroupSchedule() {
   }
 
   document.getElementById('group-schedule-content').innerHTML = html;
+  _syncChannelButtons();
 }
 
 // ============ 淘汰赛通用表格渲染（与小组赛风格一致） ============
@@ -1006,25 +1012,29 @@ function methodBadge(method) {
 }
 
 async function renderR32() {
-  const d = await fetchJSON(withChannel('/api/r32'));
+  const d = await fetchJSON(withChannelFor('r32', '/api/r32'));
+  const switcher = `<div style="margin-bottom:10px;">${tabChannelSwitcherHTML('r32', '通道')}</div>`;
   const subtitle = `<p style="color:#aaa">32 队 = ${d.n_teams}，16 场对阵${methodBadge(d.method)}</p>`;
-  document.getElementById('r32-content').innerHTML = subtitle + knockoutTable(d.matches, 'match_id');
+  document.getElementById('r32-content').innerHTML = switcher + subtitle + knockoutTable(d.matches, 'match_id');
+  _syncChannelButtons();
 }
 
-async function renderRound(apiPath, contentId, matchIdField) {
-  const d = await fetchJSON(withChannel(apiPath));
+async function renderRound(tabId, apiPath, contentId, matchIdField) {
+  const d = await fetchJSON(withChannelFor(tabId, apiPath));
+  const switcher = `<div style="margin-bottom:10px;">${tabChannelSwitcherHTML(tabId, '通道')}</div>`;
   const subtitle = `<p style="color:#aaa">${d.n_teams} 队 · ${d.n_matches} 场${methodBadge(d.method)}</p>`;
-  document.getElementById(contentId).innerHTML = subtitle + knockoutTable(d.matches, matchIdField);
+  document.getElementById(contentId).innerHTML = switcher + subtitle + knockoutTable(d.matches, matchIdField);
+  _syncChannelButtons();
 }
 
-const renderR16 = () => renderRound('/api/r16', 'r16-content', 'r16_match');
-const renderQF  = () => renderRound('/api/qf',  'qf-content',  'qf_match');
-const renderSF  = () => renderRound('/api/sf',  'sf-content',  'sf_match');
+const renderR16 = () => renderRound('r16', '/api/r16', 'r16-content', 'r16_match');
+const renderQF  = () => renderRound('qf',  '/api/qf',  'qf-content',  'qf_match');
+const renderSF  = () => renderRound('sf',  '/api/sf',  'sf-content',  'sf_match');
 
 // ============ 决赛 + 季军赛（统一表格）============
 async function renderFinalsTab() {
-  const d = await fetchJSON(withChannel('/api/final_match'));
-  let html = '';
+  const d = await fetchJSON(withChannelFor('finals_tab', '/api/final_match'));
+  let html = `<div style="margin-bottom:10px;">${tabChannelSwitcherHTML('finals_tab', '通道')}</div>`;
   const matches = [];
   if (d.final) matches.push({ ...d.final, _label: '🏆 决赛' });
   if (d.third_place_match) matches.push({
@@ -1054,6 +1064,7 @@ async function renderFinalsTab() {
     </div>`;
   }
   document.getElementById('finals-content').innerHTML = html;
+  _syncChannelButtons();
 }
 
 // ============ 单场预测表单 ============
@@ -1152,8 +1163,9 @@ async function runMatch() {
 
 // ============ 多候选轨迹 ============
 async function renderPathDist() {
-  const d = await fetchJSON(withChannel('/api/path_distribution?n=10'));
-  let html = `<p style="color:#aaa;">方法: ${d.method}</p>`;
+  const d = await fetchJSON(withChannelFor('path_dist', '/api/path_distribution?n=10'));
+  let html = `<div style="margin-bottom:10px;">${tabChannelSwitcherHTML('path_dist', '通道')}</div>`;
+  html += `<p style="color:#aaa;">方法: ${d.method}</p>`;
   d.rounds.forEach(r => {
     html += `<h3 style="color:#ffd700;margin-top:20px;">${r.stage}（Top 10 候选）</h3>`;
     html += '<table class="forecast-table" style="width:100%;">';
@@ -1172,6 +1184,7 @@ async function renderPathDist() {
     html += '</table>';
   });
   document.getElementById('path-dist-content').innerHTML = html;
+  _syncChannelButtons();
 }
 
 // ============ AI 微调影响（修正前后对比）============
@@ -1305,6 +1318,7 @@ async function setupPathForm() {
 async function runPath() {
   const t = document.getElementById('path-team').value;
   document.getElementById('path-result').innerHTML = '加载中...';
+  // 单队路径：跟随全局通道（'path' tab 不需要独立切换器，触发表单已是用户主动操作）
   const d = await fetchJSON(withChannel(`/api/team_path?team=${encodeURIComponent(t)}`));
   if (d.error) {
     document.getElementById('path-result').innerHTML = `<span style="color:#f87171;">${d.error}</span>`;
@@ -1344,14 +1358,25 @@ async function runPath() {
 }
 
 // === 1. 冠军概率柱状图 ===
-// 双通道（跟随全局 _globalChannel，由 setGlobalChannel 同步）
+// 双通道（独立 tab channel：'champion'）
 let _championChannel = 'base';
 async function renderChampion(channel) {
-  if (channel) _championChannel = channel;
-  // 优先用全局通道
-  const ch = (typeof _globalChannel !== 'undefined') ? _globalChannel : _championChannel;
+  // 优先级：显式参数 > tab 独立 > 全局
+  let ch;
+  if (channel) {
+    ch = channel;
+    setTabChannel('champion', ch);
+  } else {
+    ch = getTabChannel('champion');
+  }
+  _championChannel = ch;
   const apiName = (ch === 'ai_phase3') ? '/api/synthesizer_ai_phase3' : '/api/synthesizer';
   const hint = document.getElementById('champion-channel-hint');
+  // 渲染本地通道开关到 hint 区域旁
+  const switcherHost = document.getElementById('champion-channel-switcher');
+  if (switcherHost) {
+    switcherHost.innerHTML = tabChannelSwitcherHTML('champion', '通道');
+  }
   let data;
   try {
     data = await fetchJSON(apiName);
@@ -1367,6 +1392,7 @@ async function renderChampion(channel) {
       throw e;
     }
   }
+  _syncChannelButtons();
   const teams = Object.entries(data)
     .map(([name, d]) => ({name, ...d}))
     .sort((a, b) => b.final_probability - a.final_probability)
@@ -2210,10 +2236,30 @@ async function renderHeatmap() {
   });
 }
 
-// === 全局双通道切换 (base / ai_phase3) ===
-// 影响：冠军榜 + 小组赛 + r32 + r16 + qf + sf + 决赛 + 球队路径 + 多候选轨迹
-// 持久化到 localStorage，刷新页面保留选择
-const CHANNEL_STORAGE_KEY = 'wc_global_channel';
+// === 双通道切换 (base / ai_phase3) — Tab 独立 + 全局"一键全设" ===
+// 每个 tab 有独立的 channel 状态（localStorage 持久化），互不干扰；
+// 顶栏全局开关作为"一键全设"，把所有 tab 同步到一个值。
+//
+// 各 tab 独立通道：champion / groups / group_schedule / r32 / r16 / qf / sf / finals_tab / path_dist / path
+// 兼容：旧函数 withChannel(url) / _globalChannel 保留，仅作"全局默认"。
+const CHANNEL_STORAGE_KEY = 'wc_global_channel';      // 全局默认
+const TAB_CHANNEL_PREFIX  = 'wc_tab_channel:';        // 每 tab 独立
+
+// tab 名 → 重新渲染函数（部分函数下方才定义，调用前会做 typeof 检查）
+function _tabRenderMap() {
+  return {
+    champion:        (typeof renderChampion        === 'function') ? renderChampion        : null,
+    groups:          (typeof renderGroups          === 'function') ? renderGroups          : null,
+    group_schedule:  (typeof renderGroupSchedule   === 'function') ? renderGroupSchedule   : null,
+    r32:             (typeof renderR32             === 'function') ? renderR32             : null,
+    r16:             (typeof renderR16             === 'function') ? renderR16             : null,
+    qf:              (typeof renderQF              === 'function') ? renderQF              : null,
+    sf:              (typeof renderSF              === 'function') ? renderSF              : null,
+    finals_tab:      (typeof renderFinalsTab       === 'function') ? renderFinalsTab       : null,
+    path_dist:       (typeof renderPathDist        === 'function') ? renderPathDist        : null,
+  };
+}
+
 function getGlobalChannel() {
   try {
     const v = localStorage.getItem(CHANNEL_STORAGE_KEY);
@@ -2222,12 +2268,32 @@ function getGlobalChannel() {
 }
 function setGlobalChannel(ch) {
   _globalChannel = ch;
-  // _championChannel 兼容（renderChampion 老接口）
-  _championChannel = ch;
+  _championChannel = ch;  // 兼容老接口
   try { localStorage.setItem(CHANNEL_STORAGE_KEY, ch); } catch (e) {}
 }
+
+// === Tab 级通道 ===
+// tabId 形如 'r32' / 'group_schedule' / 'champion'
+function getTabChannel(tabId) {
+  try {
+    const v = localStorage.getItem(TAB_CHANNEL_PREFIX + tabId);
+    if (v === 'ai_phase3' || v === 'base') return v;
+  } catch (e) {}
+  // 没有独立设置 → 跟随全局
+  return _globalChannel;
+}
+function setTabChannel(tabId, ch) {
+  try { localStorage.setItem(TAB_CHANNEL_PREFIX + tabId, ch); } catch (e) {}
+}
+
+// URL 拼装：优先读 tab，失败回退全局
+function withChannelFor(tabId, url) {
+  const ch = getTabChannel(tabId);
+  if (ch !== 'ai_phase3') return url;
+  return url + (url.includes('?') ? '&' : '?') + 'channel=ai_phase3';
+}
+// 老接口：保留兼容（仅看全局，不再用于双通道 tab 内部）
 function channelQS() {
-  // 只在非 base 时附加 ?channel=ai_phase3，保持 URL 简洁兼容
   return (_globalChannel === 'ai_phase3') ? 'channel=ai_phase3' : '';
 }
 function withChannel(url) {
@@ -2238,8 +2304,9 @@ function withChannel(url) {
 
 let _globalChannel = getGlobalChannel();
 
-// 视觉同步切换器按钮
+// === 视觉同步：全局开关 + 各 tab 独立开关 ===
 function _syncChannelButtons() {
+  // 全局
   document.querySelectorAll('#global-channel-toggle .ch-btn').forEach(b => {
     const active = (b.getAttribute('data-ch') === _globalChannel);
     b.classList.toggle('active', active);
@@ -2251,7 +2318,57 @@ function _syncChannelButtons() {
       b.style.fontWeight = 'normal'; b.style.border = '1px solid rgba(74,222,128,0.4)';
     }
   });
+  // 各 tab
+  document.querySelectorAll('.tab-channel-toggle').forEach(grp => {
+    const tabId = grp.getAttribute('data-tab-id');
+    if (!tabId) return;
+    const cur = getTabChannel(tabId);
+    grp.querySelectorAll('.ch-btn').forEach(b => {
+      const active = (b.getAttribute('data-ch') === cur);
+      b.classList.toggle('active', active);
+      if (active) {
+        b.style.background = '#ffd700'; b.style.color = '#1a1a2e';
+        b.style.fontWeight = 'bold'; b.style.border = 'none';
+      } else {
+        b.style.background = 'rgba(74,222,128,0.15)'; b.style.color = '#4ade80';
+        b.style.fontWeight = 'normal'; b.style.border = '1px solid rgba(74,222,128,0.4)';
+      }
+    });
+  });
 }
+
+// 渲染 tab 内本地通道开关 HTML（嵌入到内容头部）
+function tabChannelSwitcherHTML(tabId, label) {
+  const lab = label || '通道';
+  return `<span class="tab-channel-toggle" data-tab-id="${tabId}"
+    style="display:inline-flex;gap:4px;background:rgba(255,255,255,0.05);padding:3px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);margin-left:10px;font-size:0.85em;vertical-align:middle;">
+    <span style="color:#888;padding:2px 6px;align-self:center;">${lab}:</span>
+    <button class="ch-btn" data-ch="base"
+      style="background:#ffd700;color:#1a1a2e;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:0.95em;"
+      title="纯 MC + 8 项 AI 修正（默认通道）">Base</button>
+    <button class="ch-btn" data-ch="ai_phase3"
+      style="background:rgba(74,222,128,0.15);color:#4ade80;border:1px solid rgba(74,222,128,0.4);padding:3px 10px;border-radius:4px;cursor:pointer;font-size:0.95em;"
+      title="AI 加权 MC（逐场 ΔE 注入 + 分段 ELO_PER_PP）">AI</button>
+  </span>`;
+}
+
+// 委托：响应所有 tab-channel-toggle 内的按钮点击（事件委托避免重复绑定）
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.tab-channel-toggle .ch-btn');
+  if (!btn) return;
+  const grp = btn.closest('.tab-channel-toggle');
+  const tabId = grp && grp.getAttribute('data-tab-id');
+  if (!tabId) return;
+  const ch = btn.getAttribute('data-ch');
+  if (getTabChannel(tabId) === ch) return;
+  setTabChannel(tabId, ch);
+  _syncChannelButtons();
+  // 重新渲染该 tab
+  const fn = _tabRenderMap()[tabId];
+  if (typeof fn === 'function') {
+    try { await fn(); } catch (err) { console.warn(`re-render ${tabId} 失败:`, err); }
+  }
+});
 
 // 判断某个 tab 是否已经加载过（用 tab btn 的 dataset.loaded 标记）
 function _isTabLoaded(tabName) {
@@ -2259,35 +2376,26 @@ function _isTabLoaded(tabName) {
   return !!(btn && btn.dataset.loaded);
 }
 
-// 切换通道时：联动 reRender 已加载的 tab
+// 全局"一键全设"：把所有 tab 的本地通道刷成同一个值，并 reRender 已加载的 tab
 async function _onChannelSwitch(ch) {
   if (ch === _globalChannel) return;
   setGlobalChannel(ch);
+  // 同步所有支持双通道的 tab 到这个值
+  Object.keys(_tabRenderMap()).forEach(tabId => setTabChannel(tabId, ch));
   _syncChannelButtons();
 
   const tasks = [];
-
-  // 总览的冠军榜（其他卡 scenarios/finals 不接 channel）
+  // 总览的冠军榜（始终重渲染，独立于 tab 加载状态）
   tasks.push(renderChampion().catch(e => console.warn('renderChampion 失败:', e)));
-
-  // 赛程系列 — 只 reRender 已经加载过的 tab
-  // group_schedule 不在 channel 范围（不读 mc/synth）
-  const tabMap = {
-    groups: renderGroups,
-    r32: renderR32,
-    r16: renderR16,
-    qf: renderQF,
-    sf: renderSF,
-    finals_tab: renderFinalsTab,
-    path_dist: renderPathDist,
-  };
+  // 赛程系列 — 只 reRender 已加载过的 tab
+  const tabMap = _tabRenderMap();
   for (const [tabId, fn] of Object.entries(tabMap)) {
+    if (tabId === 'champion') continue;
     if (typeof fn !== 'function') continue;
     if (_isTabLoaded(tabId)) {
       tasks.push(Promise.resolve().then(fn).catch(e => console.warn(`re-render ${tabId} 失败:`, e)));
     }
   }
-
   await Promise.all(tasks);
 }
 

@@ -406,7 +406,7 @@ class APIHandler(SimpleHTTPRequestHandler):
             elif api_name == "critical_compare":
                 data = ta.api_critical_compare()
             elif api_name == "group_schedule":
-                data = ta.api_group_schedule()
+                data = ta.api_group_schedule(channel=channel)
             elif api_name == "match_bias":
                 refresh = query.get("refresh", ["0"])[0] in ("1", "true", "yes")
                 data = ta.api_match_bias(refresh=refresh)

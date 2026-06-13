@@ -1086,9 +1086,13 @@ def api_market_bias(refresh: bool = False) -> Dict[str, Any]:
     return data
 
 
-def api_group_schedule() -> Dict[str, Any]:
+def api_group_schedule(channel: Optional[str] = None) -> Dict[str, Any]:
     """
     72 场小组赛完整赛程 + 预测 / 实际结果
+    
+    支持双通道：
+      - channel=None / "base" → 纯 MC + 8 项 AI 修正（base 通道）
+      - channel="ai_phase3"   → AI 加权 MC（逐场 ΔE 注入 + 分段 ELO_PER_PP）
     
     每场返回：
       - 基本信息：group, match_id, date, time_local, venue, venue_city, team_a, team_b
@@ -1124,7 +1128,8 @@ def api_group_schedule() -> Dict[str, Any]:
         # 不论 played 还是 scheduled 都跑预测（已结束场次也展示，方便 vs 实际对比）
         try:
             pred = _quick_match_preview(m["team_a"], m["team_b"],
-                                          venue_city=m.get("venue_city"))
+                                          venue_city=m.get("venue_city"),
+                                          channel=channel)
             if "error" not in pred:
                 entry["prediction"] = {
                     "p_win_a": pred["p_win_a"],
