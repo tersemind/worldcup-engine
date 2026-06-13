@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import time
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Dict, List, Tuple
 
@@ -98,10 +98,17 @@ def _load_config() -> dict:
 
 
 def _parse_kickoff_to_local(date: str, time_local: str, tz: str) -> Optional[datetime]:
-    """把 group_schedule 的 (date, time_local, tz) 转为「调度器本机时区」的 datetime。
+    """把 group_schedule 的 (date, time_local, tz) 转为「调度器本机时区」的 naive datetime。
 
     例：("2026-06-11", "15:00", "EDT") 表示 6/11 15:00 EDT = 6/11 19:00 UTC
         若调度器跑在北京（UTC+8）→ 6/12 03:00 北京时间。
+
+    历史 bug（已修）：旧版用 `kickoff_naive.timestamp()` 隐式按本机时区解析
+    naive datetime，再减场地 offset，结果差了「本机offset - 场地offset」（EDT
+    场地在北京机器上少 12 小时），导致 _is_match_started 把未开赛的场次误判
+    为已开赛，前端显示「🔒 进行中（预测已锁）」。
+
+    现采用 timezone-aware 的 astimezone() 显式换算，结果正确且不依赖系统时区。
 
     失败返回 None（调用方自动忽略该场次）。
     """
@@ -110,11 +117,11 @@ def _parse_kickoff_to_local(date: str, time_local: str, tz: str) -> Optional[dat
         if offset is None:
             # 时区未识别 → 直接当作本地时间用，至少不报错
             return datetime.strptime(f"{date} {time_local}", "%Y-%m-%d %H:%M")
-        # 比赛 UTC 时间 = 当地时间 - offset
         kickoff_naive = datetime.strptime(f"{date} {time_local}", "%Y-%m-%d %H:%M")
-        kickoff_utc_ts = kickoff_naive.timestamp() - offset * 3600
-        # macOS time.localtime 默认用系统时区（北京/UTC+8）
-        return datetime.fromtimestamp(kickoff_utc_ts)
+        # 显式标记场地时区，再 astimezone() 转到本机
+        kickoff_aware = kickoff_naive.replace(tzinfo=timezone(timedelta(hours=offset)))
+        kickoff_local = kickoff_aware.astimezone()  # → 本机时区 aware datetime
+        return kickoff_local.replace(tzinfo=None)   # 返回 naive 以兼容旧 caller
     except Exception:
         return None
 
