@@ -894,7 +894,21 @@ def _quick_match_preview(team_a: str, team_b: str,
     llm_boost_extra_a = 0.0
     llm_boost_extra_b = 0.0
     if _resolve_channel(channel) == "ai_phase3":
-        phase3_delta_a, phase3_delta_b = _phase3_match_delta(team_a, team_b)
+        raw_da, raw_db = _phase3_match_delta(team_a, team_b)
+        # ===== 方案乙·同号叠（2026-06-13）=====
+        # 起因：Canada(-17.4)/Bosnia(-5.2) 同号 → 两边都被压 → 净差仅 -12 ELO ≈ -2pp
+        # phase3 ΔE 来自 mc baseline 反求，对两支弱队都给出负值，preview 中相互对消
+        # 策略：同号时只保留 |ΔE| 大的一侧（让它独自吃完整 ΔE），小的一侧设 0
+        # 异号时（43/72 场）保持原样——异号是"模型本意要拉开净差"的场景
+        # 实测分布：72 场中 29 场同号、43 场异号
+        if raw_da != 0 and raw_db != 0 and (raw_da > 0) == (raw_db > 0):
+            if abs(raw_da) >= abs(raw_db):
+                phase3_delta_a, phase3_delta_b = raw_da, 0.0
+            else:
+                phase3_delta_a, phase3_delta_b = 0.0, raw_db
+        else:
+            phase3_delta_a, phase3_delta_b = raw_da, raw_db
+        
         ta_adj["elo"] += phase3_delta_a
         tb_adj["elo"] += phase3_delta_b
         # ΔE 同步注入 xg：等效 pp = ΔE/PP_TO_ELO；与 adj_squad_value 同一个 xg 缩放公式
@@ -914,12 +928,21 @@ def _quick_match_preview(team_a: str, team_b: str,
         #       参考 project_worldcup_data_pipeline_split：分裂在设计预期内
         LLM_BOOST = 2.0
         boost_factor = LLM_BOOST - 1.0  # 额外叠加倍数（base 已叠 1 倍）
-        llm_boost_extra_a = adj_a_pp * boost_factor * PP_TO_ELO
-        llm_boost_extra_b = adj_b_pp * boost_factor * PP_TO_ELO
+        # 同号叠：LLM 信号（4-adj）也常出现两边同号被对消的情况
+        # 例 Canada -2.17pp / Bosnia -0.65pp → 两边都被压；改成只压 Canada
+        if adj_a_pp != 0 and adj_b_pp != 0 and (adj_a_pp > 0) == (adj_b_pp > 0):
+            if abs(adj_a_pp) >= abs(adj_b_pp):
+                eff_adj_a, eff_adj_b = adj_a_pp, 0.0
+            else:
+                eff_adj_a, eff_adj_b = 0.0, adj_b_pp
+        else:
+            eff_adj_a, eff_adj_b = adj_a_pp, adj_b_pp
+        llm_boost_extra_a = eff_adj_a * boost_factor * PP_TO_ELO
+        llm_boost_extra_b = eff_adj_b * boost_factor * PP_TO_ELO
         ta_adj["elo"] += llm_boost_extra_a
         tb_adj["elo"] += llm_boost_extra_b
-        ta_adj["xg_for"] *= (1 + adj_a_pp * boost_factor / 100.0)
-        tb_adj["xg_for"] *= (1 + adj_b_pp * boost_factor / 100.0)
+        ta_adj["xg_for"] *= (1 + eff_adj_a * boost_factor / 100.0)
+        tb_adj["xg_for"] *= (1 + eff_adj_b * boost_factor / 100.0)
 
     # ===== B+ 方案：主场加成 =====
     # 60 Elo ≈ +8-10pp 单场胜率（参考 LLM 分析"USA 主场优势通常值 10-15%"下限）
