@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  WorldCup Web Dashboard - macOS LaunchAgent
+  ==========================================
+  - 端口 8088（与历史一致），绑定 0.0.0.0，本机 + 局域网可访问
+  - RunAtLoad=true：登录/开机就启动
+  - KeepAlive=true：进程异常退出自动重启（ThrottleInterval=30 防尖峰）
+  - 日志：data/web.daemon.log
+
+  安装：
+    cp code/web/com.kego.worldcup-web.plist ~/Library/LaunchAgents/
+    launchctl unload ~/Library/LaunchAgents/com.kego.worldcup-web.plist 2>/dev/null
+    launchctl load -w ~/Library/LaunchAgents/com.kego.worldcup-web.plist
+    launchctl list | grep worldcup-web
+
+  停止 + 卸载（关闭自启）：
+    launchctl unload -w ~/Library/LaunchAgents/com.kego.worldcup-web.plist
+
+  查看日志：
+    tail -f /Users/kego/.codebuddy/worldcup-engine/data/web.daemon.log
+
+  代码更新后重启（kickstart）：
+    launchctl kickstart -k gui/$(id -u)/com.kego.worldcup-web
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.kego.worldcup-web</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>-u</string>
+    <string>code/web/server.py</string>
+    <string>--port</string>
+    <string>8088</string>
+    <string>--host</string>
+    <string>0.0.0.0</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/kego/.codebuddy/worldcup-engine</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/kego/.codebuddy/worldcup-engine/data/web.daemon.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/kego/.codebuddy/worldcup-engine/data/web.daemon.log</string>
+
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>
