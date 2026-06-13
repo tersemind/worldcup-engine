@@ -31,6 +31,9 @@ sys.path.insert(0, str(ROOT / "code"))
 
 from quant.live_elo_solver import solve as v1_solve
 from quant.tick_writer import write_all
+from quant.live_fetcher_extras import fetch_summary
+from quant.live_stats_features import compute_v2_features
+from quant import market_anomaly_detector as v3
 
 log = logging.getLogger("quant.live_trading_loop")
 
@@ -219,17 +222,61 @@ def run_tick(verbose: bool = False) -> dict:
 
     baseline_elos = _load_baseline_elos()
 
-    # ── Step 3: v1 反求 P(H/D/A) per match ──
+    # ── Step 3: v1 反求 P(H/D/A) per match + v2 质量调整叠加 ──
     live_predictions = []
+    v2_failed_count = 0
     for raw in live_matches_raw:
         m = _normalize_live_match(raw)
+        # v1
         try:
             r = v1_solve(m, team_elos=baseline_elos)
         except Exception as e:
             log.warning(f"v1_solve 失败 for {m.get('team_a')} vs {m.get('team_b')}: {e}")
-            r = {"warnings": [f"v1_solve exception: {e}"], "source": "v1_failed"}
-        live_predictions.append({**m, **r,
-                                 "v1_warnings": r.get("warnings", [])})
+            r = {"warnings": [f"v1_solve exception: {e}"], "source": "v1_failed",
+                 "delta_elo_a": 0.0, "delta_elo_b": 0.0}
+
+        # v2 — 仅在 v1 成功 + 有 espn_id 时尝试
+        v2_block = {"ok": False, "delta_pp_a": 0.0, "components": {},
+                    "warnings": ["v2_skipped"]}
+        espn_id = raw.get("espn_id") or raw.get("event_id")
+        if espn_id and r.get("source") != "v1_failed":
+            try:
+                summary = fetch_summary(str(espn_id), timeout=6)
+                v2_block = compute_v2_features(
+                    summary,
+                    elapsed_min=int(m.get("elapsed_min") or 0),
+                    phase=m.get("phase") or "",
+                )
+            except Exception as e:
+                log.warning(f"v2 异常 for {espn_id}: {e}")
+                v2_failed_count += 1
+                v2_block = {"ok": False, "delta_pp_a": 0.0, "components": {},
+                            "warnings": [f"v2_exception: {type(e).__name__}: {e}"]}
+        else:
+            v2_block["warnings"] = ["no_espn_id" if not espn_id else "v1_failed_skip_v2"]
+
+        # 把 v2.delta_elo 叠加到 v1 上重算 P(H/D/A)
+        v2_delta_elo = float(v2_block.get("delta_elo_a", 0.0))
+        if v2_block.get("ok") and abs(v2_delta_elo) > 1e-6 and r.get("source") != "v1_failed":
+            try:
+                # 用 elo_engine 重算（与 v1 同口径）
+                from models.elo_engine import match_probabilities  # type: ignore
+                team_a, team_b = m["team_a"], m["team_b"]
+                elo_a = baseline_elos.get(team_a, 1500.0) + r.get("delta_elo_a", 0.0) + v2_delta_elo
+                elo_b = baseline_elos.get(team_b, 1500.0) + r.get("delta_elo_b", 0.0)
+                probs = match_probabilities(elo_a, elo_b)
+                r["p_win_a_v1plus_v2"] = float(probs["p_win_a"])
+                r["p_draw_v1plus_v2"] = float(probs["p_draw"])
+                r["p_win_b_v1plus_v2"] = float(probs["p_win_b"])
+            except Exception as e:
+                log.warning(f"v1+v2 P 重算失败: {e}")
+
+        live_predictions.append({
+            **m, **r,
+            "v1_warnings": r.get("warnings", []),
+            "v2": v2_block,
+            "espn_id": espn_id,
+        })
 
     # ── Step 4: arbitrage_kalshi 重算（min_edge=0 全量）──
     arb_signals = []
@@ -243,9 +290,25 @@ def run_tick(verbose: bool = False) -> dict:
         arb_error = f"{type(e).__name__}: {e}"
         log.warning(f"arbitrage_kalshi 失败: {arb_error}")
 
-    # ── Step 5: v2/v3' 接口位（S3-S5 后填）──
+    # ── Step 5: v3' Kalshi 异动检测 ──
     market_anomalies: list = []
-    v2_failed_reason = "v2_not_implemented_yet"  # S4 后改
+    v3_error = None
+    try:
+        kalshi_path = OUT_DIR / "kalshi_match_odds.json"
+        if kalshi_path.exists():
+            kdata = json.load(open(kalshi_path))
+            kmatches = kdata.get("matches") or []
+            v3.record_snapshot(kmatches)
+            market_anomalies = v3.detect_anomalies()
+            # 异动持久化（重启恢复用）
+            v3.dump_state()
+    except Exception as e:
+        v3_error = f"{type(e).__name__}: {e}"
+        log.warning(f"v3' 异动检测失败: {v3_error}")
+
+    v2_status = (f"v2_active (failed_count={v2_failed_count}/{len(live_matches_raw)})"
+                 if v2_failed_count == 0 else
+                 f"v2_partial (failed={v2_failed_count}/{len(live_matches_raw)})")
 
     # ── Step 6: 组 snapshot + 落盘 ──
     elapsed = round(time.time() - t0, 2)
@@ -262,15 +325,19 @@ def run_tick(verbose: bool = False) -> dict:
         },
         "_diagnostics": {
             "fetch_results": fetch_results,
-            "v2_status": v2_failed_reason,
+            "v2_status": v2_status,
+            "v3_error": v3_error,
             "arb_error": arb_error,
+            "n_anomalies": len(market_anomalies),
         },
     }
     write_status = write_all(snapshot)
 
     n_buy = sum(1 for s in arb_signals if s.get("type") == "BUY")
     n_sell = sum(1 for s in arb_signals if s.get("type") == "SELL")
+    n_anom = len(market_anomalies)
     summary = (f"live={len(live_predictions)} buys={n_buy} sells={n_sell} "
+               f"anom={n_anom} v2fail={v2_failed_count} "
                f"snap={'ok' if write_status['snapshot_written'] else 'FAIL'} "
                f"tick={'ok' if write_status['tick_appended'] else 'FAIL'}")
     return {
@@ -280,6 +347,7 @@ def run_tick(verbose: bool = False) -> dict:
         "n_live_matches": len(live_predictions),
         "n_buy": n_buy,
         "n_sell": n_sell,
+        "n_anomalies": n_anom,
         "fetch_results": fetch_results,
     }
 

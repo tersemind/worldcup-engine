@@ -66,6 +66,7 @@ def build_tick_row(snapshot: dict) -> dict:
 
     live_compact = []
     for p in live:
+        v2 = p.get("v2") or {}
         live_compact.append({
             "match": f"{p.get('team_a')} vs {p.get('team_b')}",
             "score": f"{p.get('score_a', '-')}-{p.get('score_b', '-')}",
@@ -74,12 +75,20 @@ def build_tick_row(snapshot: dict) -> dict:
             "p_win_a": p.get("p_win_a"),
             "p_draw": p.get("p_draw"),
             "p_win_b": p.get("p_win_b"),
+            "p_win_a_v1plus_v2": p.get("p_win_a_v1plus_v2"),
+            "p_draw_v1plus_v2": p.get("p_draw_v1plus_v2"),
+            "p_win_b_v1plus_v2": p.get("p_win_b_v1plus_v2"),
             "delta_elo_a": p.get("delta_elo_a"),
             "delta_total_pp": p.get("delta_total_pp"),
+            "v2_delta_pp": v2.get("delta_pp_a", 0.0),
+            "v2_ok": v2.get("ok", False),
             "v1_warnings": p.get("v1_warnings", []),
         })
 
     anomalies = snapshot.get("market_anomalies", []) or []
+    # 异动 top-3 预览
+    anom_preview = [{"ticker": a.get("event_ticker"), "leg": a.get("leg"),
+                     "delta_pp": a.get("delta_pp")} for a in anomalies[:3]]
 
     return {
         "ts": snapshot.get("ts"),
@@ -91,6 +100,7 @@ def build_tick_row(snapshot: dict) -> dict:
         "top_buy_edge_pp": round(top_buy, 2),
         "top_sell_edge_pp": round(top_sell, 2),
         "n_anomalies": len(anomalies),
+        "anomalies_preview": anom_preview,
     }
 
 
