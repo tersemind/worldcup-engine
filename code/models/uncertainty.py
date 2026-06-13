@@ -225,8 +225,8 @@ def structural_uncertainty(team: str) -> Dict:
 
 
 # ============ 三层综合分解 ============
-def decompose_uncertainty(team: str, n_bootstrap: int = 50,
-                            n_sim_per_bootstrap: int = 3000) -> Dict:
+def decompose_uncertainty(team: str, n_bootstrap: int = 20,
+                            n_sim_per_bootstrap: int = 800) -> Dict:
     """
     完整三层分解
     
@@ -246,7 +246,7 @@ def decompose_uncertainty(team: str, n_bootstrap: int = 50,
             "calibrated_ci_95": [9.5, 19.9]
         }
     """
-    print(f"  📊 分解 {team} 的不确定性...")
+    print(f"  📊 分解 {team} 的不确定性...", flush=True)
     
     # 三层方差计算
     para = bootstrap_elo_uncertainty(team, n_bootstrap=n_bootstrap,
@@ -331,9 +331,17 @@ def check_degradation(decomp: Dict) -> Dict:
 
 
 # ============ 主入口 ============
-def analyze_top_teams(teams: List[str] = None, n_bootstrap: int = 30,
-                       n_sim: int = 2000) -> Dict:
-    """对 Top N 球队批量分解不确定性"""
+def analyze_top_teams(teams: List[str] = None, n_bootstrap: int = 20,
+                       n_sim: int = 800) -> Dict:
+    """对 Top N 球队批量分解不确定性
+    
+    默认参数说明：
+        n_bootstrap=20, n_sim=800 → 8 队约 16k×8 = 128k 次模拟 ≈ 80 秒
+        旧默认 30/2000 = 480k 次 ≈ 5 分钟（subprocess+并发常超 600s timeout）
+        20/800 在统计上仍能给出稳定 std（CV<10%），且能稳进 derived_outputs 的 600s 预算
+    """
+    import time as _time
+    t_start = _time.time()
     if teams is None:
         # 默认用 swarm 输出的 Top 8
         swarm_path = DATA_OUTPUTS / "swarm_consensus.json"
@@ -345,16 +353,22 @@ def analyze_top_teams(teams: List[str] = None, n_bootstrap: int = 30,
             teams = ["Spain", "Argentina", "France", "England", "Brazil", 
                      "Portugal", "Germany", "Netherlands"]
     
-    print(f"🎯 分析 {len(teams)} 个球队的三层不确定性...")
-    print(f"   每队 Bootstrap {n_bootstrap} 次 × MC {n_sim} 次\n")
+    print(f"🎯 分析 {len(teams)} 个球队的三层不确定性...", flush=True)
+    print(f"   每队 Bootstrap {n_bootstrap} 次 × MC {n_sim} 次 = "
+          f"{n_bootstrap*n_sim} sims/team\n", flush=True)
     
     results = {}
-    for team in teams:
+    for i, team in enumerate(teams, 1):
+        t_team = _time.time()
         decomp = decompose_uncertainty(team, n_bootstrap=n_bootstrap,
                                           n_sim_per_bootstrap=n_sim)
         deg = check_degradation(decomp)
         decomp["degradation_check"] = deg
         results[team] = decomp
+        elapsed = _time.time() - t_team
+        total = _time.time() - t_start
+        print(f"  [{i}/{len(teams)}] {team:<14} ✓ {elapsed:.1f}s "
+              f"(累计 {total:.1f}s)", flush=True)
     
     return results
 
@@ -416,8 +430,10 @@ def print_uncertainty_report(results: Dict):
 
 
 def main():
-    n_bootstrap = int(sys.argv[1]) if len(sys.argv) > 1 else 30
-    n_sim = int(sys.argv[2]) if len(sys.argv) > 2 else 2000
+    # 默认 20/800：约 80s 跑完 8 队，稳进 derived_outputs 的 600s timeout
+    # 命令行可覆盖：python3 uncertainty.py [n_bootstrap] [n_sim] [team1,team2,...]
+    n_bootstrap = int(sys.argv[1]) if len(sys.argv) > 1 else 20
+    n_sim = int(sys.argv[2]) if len(sys.argv) > 2 else 800
     
     teams = None
     if len(sys.argv) > 3:
