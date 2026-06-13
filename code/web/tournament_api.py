@@ -876,12 +876,22 @@ def _quick_match_preview(team_a: str, team_b: str,
     # 注：base 的 4 项 adj 已在上面叠加；phase3 在此基础上再叠加 ai_weighted_baseline
     # 反求出来的 ΔE（来自 swarm/critical_node/分段 ELO_PER_PP 等"非 mc 校准"），
     # 让小组赛/r32-final 的 preview 都能反映 phase3 增益，不再仅"剧本切换"。
+    #
+    # 显著性验证（2026-06-13）发现：仅注入 elo 时实测 Δpp 只有理论值 20-50%——
+    # _quick_match_preview 用 (elo_p + poi)/2 集成，Poisson 那一半看不到 ΔE，效应被砍半。
+    # 修复：同步把 ΔE 换算回 pp 后注入 xg_for（与 base 的 adj_squad_value 路径一致）。
     phase3_delta_a = 0.0
     phase3_delta_b = 0.0
     if _resolve_channel(channel) == "ai_phase3":
         phase3_delta_a, phase3_delta_b = _phase3_match_delta(team_a, team_b)
         ta_adj["elo"] += phase3_delta_a
         tb_adj["elo"] += phase3_delta_b
+        # ΔE 同步注入 xg：ELO_per_pp=6 → 等效 pp = ΔE/6；与 adj_squad_value 同一个 xg 缩放公式
+        # 与 base 路径保持一致：仅缩放 xg_for（不动 xg_against），避免双倍效应破坏标定
+        equiv_pp_a = phase3_delta_a / PP_TO_ELO
+        equiv_pp_b = phase3_delta_b / PP_TO_ELO
+        ta_adj["xg_for"] *= (1 + equiv_pp_a / 100.0)
+        tb_adj["xg_for"] *= (1 + equiv_pp_b / 100.0)
 
     # ===== B+ 方案：主场加成 =====
     # 60 Elo ≈ +8-10pp 单场胜率（参考 LLM 分析"USA 主场优势通常值 10-15%"下限）
