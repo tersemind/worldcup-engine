@@ -683,6 +683,23 @@ async function renderGroupSchedule() {
       <span style="color:#666;margin-left:8px;font-size:0.85em">（点击有 ▾伤 标记的行查看详情）</span>
     </div>` : '';
 
+  // 冻结预测雷达：开赛后预测被锁，不再随 cascade 更新
+  let frozenBar = '';
+  const frozenMatches = (d.matches || []).filter(m => m.prediction && m.prediction.frozen);
+  if (frozenMatches.length > 0) {
+    const tip = `比赛一开始就锁定对阵预测，不再被后续 cascade 修改。\n` +
+                `锁定来源：scheduler 在赛前 cascade（开赛前 12h/6h/3h）完成后落盘。\n` +
+                `仅锁单场对阵预测；出线/冠军榜仍随 cascade 实时更新。`;
+    frozenBar = `
+      <div style="margin-top:6px;font-size:0.85em" title="${tip.replace(/"/g, '&quot;')}">
+        <span style="color:#888">🔒 预测冻结：</span>
+        <span style="color:#60a5fa;margin:0 6px">${frozenMatches.length} 场已开赛锁定</span>
+        <span style="color:#aaa;margin:0 6px">·</span>
+        <span style="color:#666;margin:0 6px">触发：赛前 12h/6h/3h cascade</span>
+        <span style="color:#666;margin-left:8px;font-size:0.85em">（点击有 ▾锁 标记的行查看冻结详情）</span>
+      </div>`;
+  }
+
   // 平局候选雷达（新逻辑：复合分 top-K + 历届基准）
   let drawBar = '';
   const dm = d.draw_meta;
@@ -712,6 +729,7 @@ async function renderGroupSchedule() {
     共 ${d.n_matches} 场
     ${llmBadgeBar}
     ${injBar}
+    ${frozenBar}
     ${drawBar}
   </div>`;
 
@@ -799,13 +817,17 @@ async function renderGroupSchedule() {
         marketCell = `<td class="num" title="${tip}">${biasBadge}<div style="font-size:0.7em;color:#888">${k_pct_a}/${k_pct_d}/${k_pct_b}%</div>${llmBadge}${linksHtml}</td>`;
       }
 
+      const isFrozen = !isPlayed && p.frozen === true;
+      const frozenAtShort = (p.frozen_at || '').replace('T', ' ').substring(0, 16);
       const status = isPlayed
         ? '<span style="color:#4ade80">✅ 已结束</span>'
-        : (isTossUp
-            ? '<span style="color:#fb923c" title="主胜与客胜差距 < 5pp 且平局率高">⚖ 势均力敌</span>'
-            : (isDrawLikely
-                ? `<span style="color:#a78bfa" title="复合分 score=p_draw-0.5×p_diff 进入 top-${(d.draw_meta&&d.draw_meta.target_k)||18}（对齐 WC 2002-2022 平均 25%）&#10;本场 score=${(p.draw_score!=null?p.draw_score.toFixed(3):'-')}">🤝 平局候选</span>`
-                : '<span style="color:#fbbf24">🕒 未开始</span>'));
+        : (isFrozen
+            ? `<span style="color:#60a5fa" title="比赛已开始 · 预测已锁定&#10;锁定时间: ${frozenAtShort}&#10;锁定后续 cascade 不再修改本场对阵预测">🔒 进行中（预测已锁）</span>`
+            : (isTossUp
+                ? '<span style="color:#fb923c" title="主胜与客胜差距 < 5pp 且平局率高">⚖ 势均力敌</span>'
+                : (isDrawLikely
+                    ? `<span style="color:#a78bfa" title="复合分 score=p_draw-0.5×p_diff 进入 top-${(d.draw_meta&&d.draw_meta.target_k)||18}（对齐 WC 2002-2022 平均 25%）&#10;本场 score=${(p.draw_score!=null?p.draw_score.toFixed(3):'-')}">🤝 平局候选</span>`
+                    : '<span style="color:#fbbf24">🕒 未开始</span>')));
 
       const predOpacity = isPlayed ? 'opacity:0.55' : '';
 
@@ -816,13 +838,14 @@ async function renderGroupSchedule() {
       const injA = m.team_a_injuries;
       const injB = m.team_b_injuries;
       const hasInjuries = !!(injA || injB);
-      const expandable = showLlm || hasInjuries || isDrawLikely;
+      const expandable = showLlm || hasInjuries || isDrawLikely || isFrozen;
       const cursor = expandable ? 'cursor:pointer' : '';
       const onclick = expandable ? `onclick="document.getElementById('${detailId}').style.display = document.getElementById('${detailId}').style.display==='none'?'table-row':'none'"` : '';
       const expandHintParts = [];
       if (showLlm) expandHintParts.push('<span style="color:#4ade80" title="模型 vs 市场胜方分歧">▾LLM</span>');
       if (hasInjuries) expandHintParts.push('<span style="color:#f87171" title="存在伤病">▾伤</span>');
       if (isDrawLikely) expandHintParts.push('<span style="color:#a78bfa" title="平局是真候选">▾平</span>');
+      if (isFrozen) expandHintParts.push('<span style="color:#60a5fa" title="预测已锁定">▾锁</span>');
       const expandHint = expandHintParts.length ? `<span style="font-size:0.7em;margin-left:4px">${expandHintParts.join(' ')}</span>` : '';
       
       // 伤病徽章构造（球队名后追加）
@@ -940,6 +963,38 @@ async function renderGroupSchedule() {
           </div>`;
         }
         
+        // ─── 冻结预测块（开赛后 frozen=true 触发）───
+        let frozenBlock = '';
+        if (isFrozen) {
+          const fpa = (p.p_win_a*100).toFixed(1);
+          const fpd = (p.p_draw*100).toFixed(1);
+          const fpb = (p.p_win_b*100).toFixed(1);
+          // _live_* 字段是 API 层保留的实时审计值（cascade 后会变；frozen 不变）
+          const lpa = p._live_p_win_a != null ? (p._live_p_win_a*100).toFixed(1) : null;
+          const lpd = p._live_p_draw  != null ? (p._live_p_draw *100).toFixed(1) : null;
+          const lpb = p._live_p_win_b != null ? (p._live_p_win_b*100).toFixed(1) : null;
+          let driftHtml = '';
+          if (lpa !== null && lpb !== null) {
+            const dpa = (p.p_win_a - p._live_p_win_a) * 100;
+            const dpd = (p.p_draw  - p._live_p_draw)  * 100;
+            const dpb = (p.p_win_b - p._live_p_win_b) * 100;
+            const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(1) + 'pp';
+            const drifted = Math.abs(dpa) >= 0.1 || Math.abs(dpd) >= 0.1 || Math.abs(dpb) >= 0.1;
+            driftHtml = drifted
+              ? `<br><span style="color:#aaa;font-size:0.85em">实时模型当下：${lpa}/${lpd}/${lpb}%（漂移 ${fmt(dpa)} / ${fmt(dpd)} / ${fmt(dpb)}）— 已忽略，以冻结值为准</span>`
+              : `<br><span style="color:#666;font-size:0.85em">实时模型当下与冻结值一致（无漂移）</span>`;
+          }
+          frozenBlock = `<div style="margin-bottom:12px;padding:10px 14px;border-left:3px solid #60a5fa;background:rgba(96,165,250,0.08)">
+            <div style="color:#60a5fa;font-weight:bold;margin-bottom:4px">🔒 预测已锁定</div>
+            <div style="color:#ddd;font-size:0.9em;line-height:1.5">
+              冻结于 <strong style="color:#60a5fa">${frozenAtShort}</strong>，锁定值：
+              主胜 <strong>${fpa}%</strong> / 平 <strong>${fpd}%</strong> / 客胜 <strong>${fpb}%</strong>。
+              ${driftHtml}
+              <br><span style="color:#888;font-size:0.85em">机制：scheduler 在赛前 12h/6h/3h cascade 完成后写入 frozen_predictions.json；比赛一开始就以冻结值为准，后续 cascade 不再修改本场对阵预测（出线/冠军榜仍随实时更新）。</span>
+            </div>
+          </div>`;
+        }
+
         // ─── 平局候选块（is_draw_likely 触发，独立于 LLM 终审）───
         let drawBlock = '';
         if (isDrawLikely) {
@@ -962,6 +1017,7 @@ async function renderGroupSchedule() {
         }
         html += `<tr id="${detailId}" style="display:none;background:rgba(255,255,255,0.04)">
           <td colspan="13" style="padding:14px 22px">
+            ${frozenBlock}
             ${drawBlock}
             ${llmBlock}
             ${injBlock}
