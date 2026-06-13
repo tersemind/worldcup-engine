@@ -39,12 +39,37 @@ def _load_bracket():
     return json.load(open(DATA_RAW / "bracket.json"))
 
 
-def _load_mc():
+def _resolve_channel(channel: Optional[str]) -> str:
+    """
+    标准化 channel 参数。base / ai_phase3 双通道支持。
+    无效值或 None 都退回 base，保证兼容老调用。
+    """
+    if channel == "ai_phase3":
+        return "ai_phase3"
+    return "base"
+
+
+def _load_mc(channel: Optional[str] = None):
+    """加载 MC 模拟概率。channel="ai_phase3" 时读 phase3，否则 base。
+    AI 通道文件不存在自动回退 base，保证不破坏主流程。"""
+    ch = _resolve_channel(channel)
+    if ch == "ai_phase3":
+        p = DATA_OUTPUTS / "mc_simulation_n100000_ai_phase3.json"
+        if p.exists():
+            return json.load(open(p))
+        # 回退 base
     p = DATA_OUTPUTS / "mc_simulation_n100000.json"
     return json.load(open(p)) if p.exists() else {}
 
 
-def _load_synth():
+def _load_synth(channel: Optional[str] = None):
+    """加载 synth 报告。channel="ai_phase3" 时读 phase3 报告，否则 base。
+    AI 通道文件不存在自动回退 base。"""
+    ch = _resolve_channel(channel)
+    if ch == "ai_phase3":
+        p = DATA_OUTPUTS / "synthesizer_report_ai_phase3.json"
+        if p.exists():
+            return json.load(open(p))
     p = DATA_OUTPUTS / "synthesizer_report.json"
     return json.load(open(p)) if p.exists() else {}
 
@@ -166,16 +191,18 @@ def _ml_lookup(round_name: str, match_id: int) -> Optional[Dict]:
 
 
 # ============ 1. 小组赛 ============
-def api_groups() -> Dict[str, Any]:
+def api_groups(channel: Optional[str] = None) -> Dict[str, Any]:
     """
     12 小组每组排名 + 预测出线
     排序优先级：
       1. 若 group_rank_dist.json 存在 → 按"小组第 1 名概率"排序（MC 100k 实测）
       2. 否则回退到 Elo 排序
+
+    channel="ai_phase3" 时使用 AI 加权 MC 通道。
     """
     teams = _load_teams()
     groups_data = _load_groups()
-    mc = _load_mc()
+    mc = _load_mc(channel)
     rank_dist = _load_group_rank_dist()
 
     # 按 group 字段分组
@@ -233,17 +260,19 @@ def api_groups() -> Dict[str, Any]:
 
 
 # ============ 2. 32 强名单 ============
-def api_r32() -> Dict[str, Any]:
+def api_r32(channel: Optional[str] = None) -> Dict[str, Any]:
     """
     32 强 = 12 小组前 2 名 (24 队) + 8 个最佳第 3 名
     返回名单 + R32 16 场对阵
+
+    channel="ai_phase3" 时使用 AI 加权 MC 通道。
     """
     teams = _load_teams()
     bracket = _load_bracket()
-    mc = _load_mc()
+    mc = _load_mc(channel)
 
     # 各组预测出线
-    groups_result = api_groups()["groups"]
+    groups_result = api_groups(channel)["groups"]
 
     # 各组预测的 winner/runner_up
     g_winners = {g: info["predicted_winner"] for g, info in groups_result.items()}
@@ -312,7 +341,7 @@ def api_r32() -> Dict[str, Any]:
             match_info["_ml_winner"] = ml_entry["winner"]
             match_info["_ml_alt_top"] = ml_entry.get("alt_matchups", [])[:3]
         if ta and tb:
-            match_info["preview"] = _quick_match_preview(ta, tb)
+            match_info["preview"] = _quick_match_preview(ta, tb, channel=channel)
         # 关键节点 5-Agent 微调（若有）
         _apply_critical_adjustment(match_info, "r32", mid)
         r32_matches.append(match_info)
@@ -420,11 +449,14 @@ def _propagate_winners(matches: List[Dict]) -> Dict[int, str]:
 
 def _build_round_from_most_likely(round_name: str, bracket_pairings: List[Dict],
                                    id_field: str, prev_round: str,
-                                   prev_a_key: str, prev_b_key: str) -> Optional[List[Dict]]:
+                                   prev_a_key: str, prev_b_key: str,
+                                   channel: Optional[str] = None) -> Optional[List[Dict]]:
     """
     通用：从 most_likely_bracket.json 构造某轮 matches 列表。
     
     返回 None 表示数据缺失，调用方应回退到贪心传播。
+
+    channel：透传给 preview 子调用（most_likely_bracket 本身仅 base 通道）。
     """
     ml = _load_most_likely()
     if not ml:
@@ -454,25 +486,26 @@ def _build_round_from_most_likely(round_name: str, bracket_pairings: List[Dict],
         if "_pathway" in p:
             m["pathway"] = p["_pathway"]
         if ta and tb:
-            m["preview"] = _quick_match_preview(ta, tb)
+            m["preview"] = _quick_match_preview(ta, tb, channel=channel)
         # 关键节点 5-Agent 微调（若有）
         _apply_critical_adjustment(m, round_name, mid)
         matches.append(m)
     return matches
 
 
-def api_r16() -> Dict[str, Any]:
+def api_r16(channel: Optional[str] = None) -> Dict[str, Any]:
     bracket = _load_bracket()
     pairings = bracket.get("_round_of_16_pairings", [])
     
-    # 优先用方案 B：MC 最可能剧本
+    # 优先用方案 B：MC 最可能剧本（注意：most_likely_bracket 暂仅 base 通道，
+    # phase3 用同一份对阵剧本，仅 preview 概率会反映 phase3 调整）
     r16_matches = _build_round_from_most_likely(
         "r16", pairings, "r16_match", "r32",
-        "winner_of_match_a", "winner_of_match_b")
+        "winner_of_match_a", "winner_of_match_b", channel=channel)
     
     # 回退：贪心 Top-1 传播
     if r16_matches is None:
-        r32 = api_r32()
+        r32 = api_r32(channel)
         r32_winners = _propagate_winners(r32["matches"])
         r16_matches = []
         for p in pairings:
@@ -485,7 +518,7 @@ def api_r16() -> Dict[str, Any]:
                 "team_a": ta, "team_b": tb,
             }
             if ta and tb:
-                m["preview"] = _quick_match_preview(ta, tb)
+                m["preview"] = _quick_match_preview(ta, tb, channel=channel)
             r16_matches.append(m)
 
     teams_in_r16 = list({m["team_a"] for m in r16_matches if m.get("team_a")} |
@@ -499,16 +532,16 @@ def api_r16() -> Dict[str, Any]:
     }
 
 
-def api_qf() -> Dict[str, Any]:
+def api_qf(channel: Optional[str] = None) -> Dict[str, Any]:
     bracket = _load_bracket()
     pairings = bracket.get("_quarterfinal_pairings", [])
     
     qf_matches = _build_round_from_most_likely(
         "qf", pairings, "qf_match", "r16",
-        "winner_of_r16_a", "winner_of_r16_b")
+        "winner_of_r16_a", "winner_of_r16_b", channel=channel)
     
     if qf_matches is None:
-        r16 = api_r16()
+        r16 = api_r16(channel)
         r16_winners = _propagate_winners(r16["matches"])
         qf_matches = []
         for p in pairings:
@@ -522,7 +555,7 @@ def api_qf() -> Dict[str, Any]:
                 "team_a": ta, "team_b": tb,
             }
             if ta and tb:
-                m["preview"] = _quick_match_preview(ta, tb)
+                m["preview"] = _quick_match_preview(ta, tb, channel=channel)
             qf_matches.append(m)
 
     teams_in = sorted({t for m in qf_matches
@@ -532,16 +565,16 @@ def api_qf() -> Dict[str, Any]:
             "method": "MC 最可能剧本（方案 B）" if _load_most_likely() else "贪心 Top-1 传播"}
 
 
-def api_sf() -> Dict[str, Any]:
+def api_sf(channel: Optional[str] = None) -> Dict[str, Any]:
     bracket = _load_bracket()
     pairings = bracket.get("_semifinal_pairings", [])
     
     sf_matches = _build_round_from_most_likely(
         "sf", pairings, "sf_match", "qf",
-        "winner_of_qf_a", "winner_of_qf_b")
+        "winner_of_qf_a", "winner_of_qf_b", channel=channel)
     
     if sf_matches is None:
-        qf = api_qf()
+        qf = api_qf(channel)
         qf_winners = _propagate_winners(qf["matches"])
         sf_matches = []
         for p in pairings:
@@ -555,7 +588,7 @@ def api_sf() -> Dict[str, Any]:
                 "team_a": ta, "team_b": tb,
             }
             if ta and tb:
-                m["preview"] = _quick_match_preview(ta, tb)
+                m["preview"] = _quick_match_preview(ta, tb, channel=channel)
             sf_matches.append(m)
 
     teams_in = sorted({t for m in sf_matches
@@ -565,7 +598,7 @@ def api_sf() -> Dict[str, Any]:
             "method": "MC 最可能剧本（方案 B）" if _load_most_likely() else "贪心 Top-1 传播"}
 
 
-def api_final_match() -> Dict[str, Any]:
+def api_final_match(channel: Optional[str] = None) -> Dict[str, Any]:
     """决赛对阵"""
     bracket = _load_bracket()
     fp = bracket.get("_final_pairing", {})
@@ -586,7 +619,7 @@ def api_final_match() -> Dict[str, Any]:
         }
     else:
         # 回退：贪心传播
-        sf = api_sf()
+        sf = api_sf(channel)
         sf_winners = _propagate_winners(sf["matches"])
         ta = sf_winners.get(fp.get("winner_of_sf_a"))
         tb = sf_winners.get(fp.get("winner_of_sf_b"))
@@ -598,7 +631,7 @@ def api_final_match() -> Dict[str, Any]:
         }
     
     if ta and tb:
-        final["preview"] = _quick_match_preview(ta, tb)
+        final["preview"] = _quick_match_preview(ta, tb, channel=channel)
         # 关键节点 5-Agent 微调（若有）
         _apply_critical_adjustment(final, "final", 1)
         # 预测冠军：方案 B 优先用 MC 频次最高胜方，否则用贪心
@@ -716,7 +749,8 @@ def _goal_diff_range(lam_a: float, lam_b: float) -> str:
 
 def _quick_match_preview(team_a: str, team_b: str,
                           neutral: bool = True,
-                          venue_city: Optional[str] = None) -> Dict[str, Any]:
+                          venue_city: Optional[str] = None,
+                          channel: Optional[str] = None) -> Dict[str, Any]:
     """
     单场预测：Elo + Poisson 集成 + Synth 球队级调整注入 + 主场加成
     
@@ -741,7 +775,7 @@ def _quick_match_preview(team_a: str, team_b: str,
     # ===== B 方案：注入 synth 球队级调整 =====
     PP_TO_ELO = 6.0
     
-    synth = _load_synth()
+    synth = _load_synth(channel)
     synth_a = synth.get(team_a, {})
     synth_b = synth.get(team_b, {})
     
@@ -1172,7 +1206,7 @@ def api_critical_compare() -> Dict[str, Any]:
     }
 
 
-def api_path_distribution(top_n: int = 10) -> Dict[str, Any]:
+def api_path_distribution(top_n: int = 10, channel: Optional[str] = None) -> Dict[str, Any]:
     """
     参考表 3.6.20 风格：每轮 Top N 候选 + MC 概率分布
 
@@ -1180,8 +1214,10 @@ def api_path_distribution(top_n: int = 10) -> Dict[str, Any]:
       - 每轮列出 Top N 进入该轮概率最高的球队
       - 每队带累积概率（进入该轮 = 进入上一轮的条件概率）
       - 这才是 参考报告 "潜在对手" 的真实数据基础
+
+    channel="ai_phase3" 时使用 AI 加权 MC 通道。
     """
-    mc = _load_mc()
+    mc = _load_mc(channel)
     teams = _load_teams()
 
     def top_by(field: str, n: int = top_n):
@@ -1221,17 +1257,19 @@ def api_path_distribution(top_n: int = 10) -> Dict[str, Any]:
     }
 
 
-def api_team_path(team_name: str) -> Dict[str, Any]:
+def api_team_path(team_name: str, channel: Optional[str] = None) -> Dict[str, Any]:
     """
     单队夺冠路径分解 — 严格按 路径表体例 表格格式
     
     输出 6 行：
       小组第 1 出线 / 进入 16 强 / 进入 8 强 / 进入半决赛 / 进入决赛 / 夺冠
     每行: 概率区间 + 置信度档次 + 说明
+
+    channel="ai_phase3" 时使用 AI 加权 MC 通道。
     """
     teams = _load_teams()
-    mc = _load_mc()
-    synth = _load_synth()
+    mc = _load_mc(channel)
+    synth = _load_synth(channel)
 
     if team_name not in teams:
         return {"error": f"unknown team: {team_name}"}

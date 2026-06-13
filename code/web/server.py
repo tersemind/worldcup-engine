@@ -365,19 +365,25 @@ class APIHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": f"tournament_api import failed: {e}"}, status=500)
             return
 
+        # 双通道支持：?channel=base | ai_phase3（默认 base）
+        # 仅赛程系列 API 接受此参数：groups/r32/r16/qf/sf/final_match/team_path/path_distribution
+        channel = query.get("channel", ["base"])[0]
+        if channel not in ("base", "ai_phase3"):
+            channel = "base"
+
         try:
             if api_name == "groups":
-                data = ta.api_groups()
+                data = ta.api_groups(channel=channel)
             elif api_name == "r32":
-                data = ta.api_r32()
+                data = ta.api_r32(channel=channel)
             elif api_name == "r16":
-                data = ta.api_r16()
+                data = ta.api_r16(channel=channel)
             elif api_name == "qf":
-                data = ta.api_qf()
+                data = ta.api_qf(channel=channel)
             elif api_name == "sf":
-                data = ta.api_sf()
+                data = ta.api_sf(channel=channel)
             elif api_name == "final_match":
-                data = ta.api_final_match()
+                data = ta.api_final_match(channel=channel)
             elif api_name == "bracket":
                 data = ta.api_bracket()
             elif api_name == "match":
@@ -393,10 +399,10 @@ class APIHandler(SimpleHTTPRequestHandler):
                 if not t:
                     self._send_json({"error": "需要 query: ?team=Spain"}, status=400)
                     return
-                data = ta.api_team_path(t)
+                data = ta.api_team_path(t, channel=channel)
             elif api_name == "path_distribution":
                 n = int(query.get("n", ["10"])[0])
-                data = ta.api_path_distribution(top_n=n)
+                data = ta.api_path_distribution(top_n=n, channel=channel)
             elif api_name == "critical_compare":
                 data = ta.api_critical_compare()
             elif api_name == "group_schedule":
