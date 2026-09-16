@@ -24,13 +24,13 @@ from data.injuries_fetcher import load_injuries, get_health_adjustments
 
 
 CODE_DIR = Path(__file__).parent.parent  # code/
-ENGINE_DIR = Path(__file__).parent.parent.parent  # worldcup-engine/
+ENGINE_DIR = Path(__file__).parent.parent.parent  # worldcup-predict/
 
 
 def show_status():
     """显示当前所有数据源的状态"""
     print("=" * 70)
-    print("📊 WorldCup Engine 数据状态总览")
+    print("📊 WorldCup Predict 数据状态总览")
     print("=" * 70)
     
     teams = load_teams()
@@ -86,7 +86,7 @@ def show_status():
 def auto_refresh():
     """自动刷新流程"""
     print("=" * 70)
-    print("🚀 WorldCup Engine v1.2 — 一键自动刷新")
+    print("🚀 WorldCup Predict v1.2 — 一键自动刷新")
     print("=" * 70)
     
     # Step 1: 抓 Elo
@@ -108,7 +108,7 @@ def auto_refresh():
     print("\n💰 Step 2/4: 市场赔率刷新")
     print("-" * 70)
     print("  ℹ️  需要 Claude 用 WebFetch 抓取，请运行：")
-    print("      /wc-engine refresh market")
+    print("      /wc-predict refresh market")
     print("  或手动：")
     print("      python3 code/data/refresh_helper.py update <team> market_implied <0.xxx>")
     
@@ -116,7 +116,7 @@ def auto_refresh():
     print("\n🏥 Step 3/4: 伤病情报刷新")
     print("-" * 70)
     print("  ℹ️  需要 Claude 用 WebSearch 抓取，请运行：")
-    print("      /wc-engine refresh injuries")
+    print("      /wc-predict refresh injuries")
     print("  当前伤病库摘要：")
     health_adjs = get_health_adjustments()
     if health_adjs:

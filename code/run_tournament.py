@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WorldCup Engine 主入口：完整跑通
+WorldCup Predict 主入口：完整跑通
   Step 1: 蒙特卡洛模拟（默认 100,000 次）
   Step 2: 综合预测（叠加情境调整）
   Step 3: 输出报告
@@ -17,7 +17,7 @@ from utils.io import save_output
 
 def main(n_sim: int = 100000, seed: int = 42):
     print("=" * 80)
-    print(f"🚀 WorldCup Engine v1.0 — Tournament Prediction")
+    print(f"🚀 WorldCup Predict v1.0 — Tournament Prediction")
     print(f"   蒙特卡洛模拟次数: {n_sim:,}")
     print(f"   随机种子: {seed}")
     print("=" * 80)

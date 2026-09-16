@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WorldCup Engine Web 仪表盘（#11 P3）
+WorldCup Predict Web 仪表盘（#11 P3）
 
 技术栈：
 - 后端：Python 内置 http.server（无需 FastAPI 依赖）
@@ -361,15 +361,12 @@ class APIHandler(SimpleHTTPRequestHandler):
             "synthesizer_ai_phase3": "synthesizer_report_ai_phase3.json",
             "scenarios": "three_scenarios.json",
             "finals": "finals_matchups.json",
-            "arbitrage": "arbitrage_signals.json",
-            "arbitrage_kalshi": "arbitrage_kalshi_signals.json",
             "calibration": "calibration.json",
             "backtest": "backtest_result.json",
             "mc": "mc_simulation_n100000.json",
             "swarm": "swarm_consensus.json",
             "uncertainty": "uncertainty_decomposition.json",
             "in_match": "in_match_update.json",
-            "in_match_live": "in_match_live.json",
             "data_quality": "data_quality_report.json",
             "kalshi": "kalshi_match_odds.json",
         }
@@ -412,35 +409,6 @@ class APIHandler(SimpleHTTPRequestHandler):
                 "dynamic_apis": sorted(dynamic_apis),
             }, status=404)
             return
-
-        # arbitrage_kalshi?all=1 → 即时生成全量信号（不过滤 min_edge），
-        # 用于"全部场次单场赔率"展示，与套利信号表共享指标体系
-        if api_name == "arbitrage_kalshi" and query.get("all", ["0"])[0] in ("1", "true"):
-            try:
-                sys.path.insert(0, str(Path(__file__).parent.parent))
-                from models.arbitrage_kalshi import generate_kalshi_signals
-                signals = generate_kalshi_signals(
-                    bankroll=10000, min_edge_pp=0.0, future_only=True
-                )
-                # 复用静态文件里的 market / _freshness 元数据（如有）
-                meta = {}
-                static_path = DATA_OUTPUTS / api_to_file[api_name]
-                if static_path.exists():
-                    with open(static_path, "r") as f:
-                        static_data = json.load(f)
-                    meta = {
-                        "market": static_data.get("market", {}),
-                        "_freshness": static_data.get("_freshness", {}),
-                    }
-                self._send_json({
-                    "n_signals": len(signals),
-                    "signals": signals,
-                    **meta,
-                })
-                return
-            except Exception as e:
-                self._send_json({"error": f"arbitrage_kalshi all=1 failed: {e}"}, status=500)
-                return
 
         file_path = DATA_OUTPUTS / api_to_file[api_name]
         if not file_path.exists():
@@ -596,7 +564,7 @@ def run_server(port: int = PORT, host: str = "0.0.0.0"):
     server = HTTPServer((host, port), APIHandler)
     lan_ips = _detect_lan_ip()
 
-    print(f"🌐 WorldCup Engine Web 仪表盘启动")
+    print(f"🌐 WorldCup Predict Web 仪表盘启动")
     print(f"   Bind: {host}:{port}")
     print(f"   访问地址:")
     print(f"     - 本机:    http://localhost:{port}")
@@ -608,7 +576,6 @@ def run_server(port: int = PORT, host: str = "0.0.0.0"):
     print(f"     /api/synthesizer_ai_phase3 → 综合预测（AI 加权 MC + 8 项修正，分段 ELO_PER_PP）")
     print(f"     /api/scenarios    → 三情景")
     print(f"     /api/finals       → 决赛对阵")
-    print(f"     /api/arbitrage    → 套利信号")
     print(f"     /api/scheduler    → 调度仪表盘（22 任务 + cascade 进度）")
     print(f"     /api/backtest     → 回测结果")
     print(f"   按 Ctrl+C 停止\n")
@@ -627,7 +594,7 @@ def run_server(port: int = PORT, host: str = "0.0.0.0"):
 
 if __name__ == "__main__":
     import argparse
-    ap = argparse.ArgumentParser(description="WorldCup Engine Web 仪表盘")
+    ap = argparse.ArgumentParser(description="WorldCup Predict Web 仪表盘")
     ap.add_argument("--port", type=int, default=PORT, help=f"端口 (默认 {PORT})")
     ap.add_argument("--host", default="0.0.0.0",
                      help="绑定地址 (默认 0.0.0.0 = 所有网卡含局域网; 用 127.0.0.1 仅本机)")

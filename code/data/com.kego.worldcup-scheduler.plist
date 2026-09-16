@@ -19,8 +19,8 @@
     launchctl unload -w ~/Library/LaunchAgents/com.kego.worldcup-scheduler.plist
 
   查看日志：
-    tail -f /Users/kego/project/worldcup-engine/data/scheduler.daemon.log
-    tail -f /Users/kego/project/worldcup-engine/data/scheduler.resilient.log
+    tail -f /Users/kego/project/worldcup-predict/data/scheduler.daemon.log
+    tail -f /Users/kego/project/worldcup-predict/data/scheduler.resilient.log
 -->
 <plist version="1.0">
 <dict>
@@ -31,14 +31,14 @@
   <array>
     <string>/usr/bin/python3</string>
     <string>-u</string>
-    <string>/Users/kego/project/worldcup-engine/code/data/scheduler_resilient_start.py</string>
+    <string>/Users/kego/project/worldcup-predict/code/data/scheduler_resilient_start.py</string>
     <string>--bootstrap=default</string>
     <string>--tick=60</string>
     <string>--max-wait-net=300</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/kego/project/worldcup-engine</string>
+  <string>/Users/kego/project/worldcup-predict</string>
 
   <key>EnvironmentVariables</key>
   <dict>
@@ -65,10 +65,10 @@
   <integer>30</integer>
 
   <key>StandardOutPath</key>
-  <string>/Users/kego/project/worldcup-engine/data/scheduler.daemon.log</string>
+  <string>/Users/kego/project/worldcup-predict/data/scheduler.daemon.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/Users/kego/project/worldcup-engine/data/scheduler.daemon.log</string>
+  <string>/Users/kego/project/worldcup-predict/data/scheduler.daemon.log</string>
 
   <key>ProcessType</key>
   <string>Background</string>

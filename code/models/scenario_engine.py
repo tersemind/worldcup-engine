@@ -153,7 +153,7 @@ def run_three_scenarios(n_simulations: int = 100000, seed: int = 42) -> dict:
     运行三情景并行模拟，返回 {scenario: probs}
     """
     print("=" * 80)
-    print(f"🎬 WorldCup Engine — 三情景平行模拟（每情景 {n_simulations:,} 次）")
+    print(f"🎬 WorldCup Predict — 三情景平行模拟（每情景 {n_simulations:,} 次）")
     print("=" * 80)
     
     results = {}

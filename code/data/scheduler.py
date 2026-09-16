@@ -72,7 +72,6 @@ DEFAULT_CONFIG = {
         "squad_value":     {"interval_min": 10080,"enabled": True, "timeout_sec": 1200,"triggers_cascade": True,  "description": "Transfermarkt 阵容市值（每周 1 次），回写 teams.json[*].squad_value_m_eur"},
         "referee":         {"interval_min": 120,  "enabled": True, "timeout_sec": 600, "triggers_cascade": True,  "description": "裁判任命（赛前 30h 内抓取，24h 不重抓）；接入 synthesizer 裁判风格调整"},
         "in_match":        {"interval_min": 10,   "enabled": True, "timeout_sec": 120, "triggers_cascade": False, "description": "赛中迭代（MRCA+ITA+SOA）。仅当 live_events.json 有 live_matches 时实际跑；写 in_match_update.json 给 web 直读"},
-        "live_trading_tick":{"interval_min": 1,    "enabled": True, "timeout_sec": 30,  "triggers_cascade": False, "description": "quant 高频量化 tick（仅 live match 存在时跑）；写 in_match_live.json + in_match_ticks.jsonl"},
     }
 }
 
@@ -375,167 +374,10 @@ def task_elo(timeout: int = 60) -> dict:
     return {"changed": changed, "summary": out.strip().split("\n")[-1][:80]}
 
 
-# 套利 hook 并发锁：同源连续触发时仅一次在跑（市场每秒可能多次小变化）
-_arb_hook_lock = threading.Lock()
-_arb_kalshi_hook_lock = threading.Lock()
-
-
-def _arbitrage_fast_hook_sync(source: str) -> str:
-    """S2 同步实现：lib 调用 generate_signals 并写 arbitrage_signals.json。
-
-    完全吞异常（feedback_no_break_existing）。返回 summary 文本，失败返空串。
-    """
-    try:
-        import sys as _sys
-        _sys.path.insert(0, str(ROOT / "code"))
-        from models.arbitrage import generate_signals
-        from utils.io import save_output, DATA_OUTPUTS, DATA_RAW
-
-        synth_path = DATA_OUTPUTS / "synthesizer_report.json"
-        teams_path = DATA_RAW / "teams.json"
-        if not synth_path.exists():
-            return ""  # 还没第一次 cascade，跳过
-
-        signals = generate_signals(bankroll=10000)
-
-        model_ts = datetime.fromtimestamp(synth_path.stat().st_mtime).isoformat(timespec="seconds")
-        market_ts = datetime.fromtimestamp(teams_path.stat().st_mtime).isoformat(timespec="seconds") if teams_path.exists() else None
-
-        save_output("arbitrage_signals.json", {
-            "bankroll": 10000,
-            "n_signals": len(signals),
-            "signals": signals,
-            "market": {
-                "name": "2026 FIFA World Cup Winner",
-                "venue": "Polymarket",
-                "event_url": "https://polymarket.com/event/world-cup-winner",
-                "note": "夺冠盘：每队为独立的 Yes/No 合约",
-            },
-            "_freshness": {
-                "trigger": source,
-                "refreshed_at": datetime.now().isoformat(timespec="seconds"),
-                "model_snapshot_ts": model_ts,
-                "market_snapshot_ts": market_ts,
-            },
-        })
-
-        n_s = sum(1 for s in signals if s.get("grade") == "S")
-        n_a = sum(1 for s in signals if s.get("grade") == "A")
-        return f"arb({len(signals)}信号/{n_s}S/{n_a}A)"
-    except Exception as e:
-        log.warning(f"[arbitrage_hook] {source} 同步执行失败: {type(e).__name__}: {e}")
-        return ""
-
-
-def _arbitrage_fast_hook(source: str) -> str:
-    """S2 异步入口：起后台线程跑 _arbitrage_fast_hook_sync，主调用方立即返回。
-
-    设计要点：
-      - 主调用（task_polymarket/task_kalshi）不再被套利计算阻塞，scheduler tick 永远秒级
-      - 用 _arb_hook_lock try-acquire 防同源连击重复计算（市场连续小变化时合并）
-      - 异常完全吞掉，不影响数据拉取主流程
-
-    Returns:
-        立即返回 " + arb(async)" 标记串（供 summary 拼接），实际结果在后台写文件
-    """
-    def _bg():
-        if not _arb_hook_lock.acquire(blocking=False):
-            log.info(f"[arbitrage_hook] {source} 已在跑，本次合并跳过")
-            return
-        try:
-            t0 = time.time()
-            result = _arbitrage_fast_hook_sync(source)
-            if result:
-                log.info(f"[arbitrage_hook] {source} ✓ {result} ({time.time()-t0:.2f}s)")
-        finally:
-            _arb_hook_lock.release()
-
-    try:
-        threading.Thread(target=_bg, daemon=True, name=f"arb_hook_{source}").start()
-        return " + arb(async)"
-    except Exception as e:
-        log.warning(f"[arbitrage_hook] {source} 起线程失败: {type(e).__name__}: {e}")
-        return ""
-
-
-def _arbitrage_kalshi_hook_sync(source: str) -> str:
-    """Kalshi 单场套利同步实现（依赖 match_bias.json 已存在）。
-
-    完全吞异常。返回 summary 文本，失败返空串。
-    """
-    try:
-        import sys as _sys
-        _sys.path.insert(0, str(ROOT / "code"))
-        from models.arbitrage_kalshi import generate_kalshi_signals
-        from utils.io import save_output, DATA_OUTPUTS
-
-        bias_path = DATA_OUTPUTS / "match_bias.json"
-        kalshi_path = DATA_OUTPUTS / "kalshi_match_odds.json"
-        if not bias_path.exists() or not kalshi_path.exists():
-            return ""  # 首次 cascade 前 / 首次 kalshi 抓取前，跳过
-
-        signals = generate_kalshi_signals(bankroll=10000, min_edge_pp=3.0, future_only=True)
-        buys = [s for s in signals if s.get("type") == "BUY"]
-        sells = [s for s in signals if s.get("type") == "SELL"]
-
-        bias_ts = datetime.fromtimestamp(bias_path.stat().st_mtime).isoformat(timespec="seconds")
-        kalshi_ts = datetime.fromtimestamp(kalshi_path.stat().st_mtime).isoformat(timespec="seconds")
-
-        save_output("arbitrage_kalshi_signals.json", {
-            "bankroll": 10000,
-            "n_signals": len(signals),
-            "n_buy": len(buys),
-            "n_sell": len(sells),
-            "signals": signals,
-            "market": {
-                "name": "FIFA World Cup 2026 — Single Game Winner (H/D/A)",
-                "venue": "Kalshi",
-                "series_ticker": "KXWCGAME",
-                "series_url": "https://kalshi.com/markets/kxwcgame",
-                "note": "单场胜平负盘：模型 P(H/D/A) vs Kalshi P(H/D/A)；min_edge=3pp",
-            },
-            "_freshness": {
-                "trigger": source,
-                "refreshed_at": datetime.now().isoformat(timespec="seconds"),
-                "bias_snapshot_ts": bias_ts,
-                "kalshi_snapshot_ts": kalshi_ts,
-            },
-        })
-
-        n_s = sum(1 for s in buys if s.get("grade") == "S")
-        n_a = sum(1 for s in buys if s.get("grade") == "A")
-        return f"arb_kalshi({len(signals)}/{n_s}S/{n_a}A)"
-    except Exception as e:
-        log.warning(f"[arbitrage_kalshi_hook] {source} 同步执行失败: {type(e).__name__}: {e}")
-        return ""
-
-
-def _arbitrage_kalshi_hook(source: str) -> str:
-    """Kalshi 套利异步入口，结构与 _arbitrage_fast_hook 一致。"""
-    def _bg():
-        if not _arb_kalshi_hook_lock.acquire(blocking=False):
-            log.info(f"[arbitrage_kalshi_hook] {source} 已在跑，本次合并跳过")
-            return
-        try:
-            t0 = time.time()
-            result = _arbitrage_kalshi_hook_sync(source)
-            if result:
-                log.info(f"[arbitrage_kalshi_hook] {source} ✓ {result} ({time.time()-t0:.2f}s)")
-        finally:
-            _arb_kalshi_hook_lock.release()
-
-    try:
-        threading.Thread(target=_bg, daemon=True, name=f"arb_kalshi_hook_{source}").start()
-        return " + arb_kalshi(async)"
-    except Exception as e:
-        log.warning(f"[arbitrage_kalshi_hook] {source} 起线程失败: {type(e).__name__}: {e}")
-        return ""
-
-
 def task_polymarket(timeout: int = 60) -> dict:
     out = _run_subprocess(["python3", "code/data/fetch_polymarket_winner.py"], timeout, "polymarket")
     changed = "变化 ≥0.5pp 的 0 队" not in out
-    # 解析 "回写 teams.json: 更新 N 队" —— 真正驱动套利价值变化的链路
+    # 解析 "回写 teams.json: 更新 N 队" —— 写入 summary 展示同步队数
     import re
     m_sync = re.search(r"回写 teams\.json[:：]\s*更新\s*(\d+)\s*队", out)
     n_synced = int(m_sync.group(1)) if m_sync else 0
@@ -544,21 +386,13 @@ def task_polymarket(timeout: int = 60) -> dict:
     summary = last_line[-1] if last_line else "ok"
     if n_synced > 0:
         summary += f" → teams.json 同步 {n_synced} 队"
-    # S2: 价格一变立刻刷套利信号（<1s lib call，失败吞掉）
-    # changed=True 或 n_synced>0 都触发：external_predictions 变化必带 teams 变化
-    if changed or n_synced > 0:
-        summary += _arbitrage_fast_hook("polymarket")
     return {"changed": changed or n_synced > 0, "summary": summary}
 
 
 def task_kalshi(timeout: int = 60) -> dict:
     _run_subprocess(["python3", "code/data/fetch_kalshi_match_odds.py"], timeout, "kalshi")
     # Kalshi 赔率几乎总在变
-    # S2: 价格一变立刻刷套利信号（<1s lib call，失败吞掉）
-    summary = ("kalshi refreshed"
-               + _arbitrage_fast_hook("kalshi")           # 夺冠盘套利（间接受 Kalshi 影响小，但保持一致）
-               + _arbitrage_kalshi_hook("kalshi"))         # 单场套利（直接用新 Kalshi 价 vs 旧模型）
-    return {"changed": True, "summary": summary}
+    return {"changed": True, "summary": "kalshi refreshed"}
 
 
 def task_group_results(timeout: int = 60) -> dict:
@@ -615,7 +449,7 @@ def task_critical_nodes(timeout: int = 1800) -> dict:
 
 
 def task_derived_outputs(timeout: int = 600) -> dict:
-    """P1b: 衍生输出并行计算（swarm + arbitrage + finals + group_rank + uncertainty + most_likely_bracket）
+    """P1b: 衍生输出并行计算（swarm + finals + group_rank + uncertainty + most_likely_bracket）
 
     这些彼此独立，可并行；MC 结果是它们的共同输入。
     """
@@ -623,7 +457,6 @@ def task_derived_outputs(timeout: int = 600) -> dict:
     
     steps = {
         "swarm":              ["python3", "code/agents/swarm.py"],
-        "arbitrage":          ["python3", "code/models/arbitrage.py"],
         "finals_analyzer":    ["python3", "code/models/finals_analyzer.py"],
         "group_rank_dist":    ["python3", "code/models/group_rank_dist.py"],
         "uncertainty":        ["python3", "code/models/uncertainty.py"],
@@ -664,8 +497,8 @@ def task_derived_outputs(timeout: int = 600) -> dict:
         except Exception as e:
             return name, None, f"{type(e).__name__}: {str(e)[:100]}"
     
-    # 6 子任务 → 6 worker，所有派生输出真正并发（之前 4 worker 会让 2 项排队）
-    with ThreadPoolExecutor(max_workers=6) as pool:
+    # 5 子任务 → 5 worker，所有派生输出真正并发（之前 4 worker 会让 2 项排队）
+    with ThreadPoolExecutor(max_workers=5) as pool:
         futures = [pool.submit(_one, item) for item in steps.items()]
         for fut in as_completed(futures):
             name, dt, err = fut.result()
@@ -868,27 +701,6 @@ def task_in_match(timeout: int = 120) -> dict:
     except Exception as e:
         # 任何异常都不能影响 scheduler 主循环
         return {"changed": False, "summary": f"in_match 异常: {type(e).__name__}: {e}"}
-
-
-def task_live_trading_tick(timeout: int = 30) -> dict:
-    """quant 高频量化 tick（每 60s 跑一次）。
-
-    仅当 has_live_match() == True 时实际跑（否则秒退）。
-    写 in_match_live.json（snapshot, web 直读）+ in_match_ticks.jsonl（append）。
-
-    任何异常都吞掉，绝不破坏主调度。
-    """
-    try:
-        import sys as _sys
-        _sys.path.insert(0, str(ROOT / "code"))
-        from quant.live_trading_loop import run_tick
-        out = run_tick(verbose=False)
-        return {
-            "changed": out.get("changed", False),
-            "summary": out.get("summary", "?"),
-        }
-    except Exception as e:
-        return {"changed": False, "summary": f"live_trading_tick 异常: {type(e).__name__}: {e}"}
 
 
 def _sync_live_state():
@@ -1130,11 +942,11 @@ def task_cascade() -> dict:
 
       Step 1 (L3): synthesizer                                       [序列，下游强依赖]
       Step 2 (L4+L5a): monte_carlo 100k  ‖  match_bias_detector      [并行]
-      Step 3 (L5b): calibrator ‖ report_writer ‖ derived_outputs(6)  [并行，全包 try/except]
+      Step 3 (L5b): calibrator ‖ report_writer ‖ derived_outputs(5)  [并行，全包 try/except]
       Step 4 (L5c): scenarios ‖ multi_model_compare                  [并行，全包 try/except]
 
     Step 3 是"派生输出流水线"——MC 输出后立刻刷新 calibration / 三语报告 /
-    swarm+arbitrage+finals+group_rank+uncertainty+most_likely_bracket（derived_outputs 内部 6 项并行）。
+    swarm+finals+group_rank+uncertainty+most_likely_bracket（derived_outputs 内部 5 项并行）。
     Step 4 是"应用层流水线"——MC 输出后立刻刷新 scenario / 多模型对比，让 web 端的
     情景预测与对比图秒级跟上 MC。重活（critical_nodes 1800s / upset_llm 600s）
     保留独立 timer，不塞进 cascade，避免拖垮节奏。
@@ -1176,12 +988,6 @@ def task_cascade() -> dict:
             name, dt = fut.result()
             elapsed_2[name] = dt
     t_step2 = time.time() - t1
-
-    # match_bias 刚刷完，异步触发 Kalshi 单场套利信号生成（用最新模型 vs 最新 Kalshi 价）
-    try:
-        _arbitrage_kalshi_hook("cascade")
-    except Exception as e:
-        log.warning(f"[cascade] kalshi_arb_hook 起线程失败: {type(e).__name__}: {e}")
 
     # ─── Step 2.5: AI 加权 MC 通道（phase3）───
     # 双通道架构：base 通道走纯 MC（Step 2），AI 通道走 phase3（分段 ELO_PER_PP，逐场注入 ΔE）
@@ -1253,7 +1059,7 @@ def task_cascade() -> dict:
     parallel_steps_3 = {
         "calibrator":     ["python3", "code/models/calibrator.py", "report"],
         "report_writer":  ["python3", "code/models/report_writer.py", "all"],
-        # derived_outputs 自己内部已经是 6 项并行（swarm/arbitrage/finals/group_rank/uncertainty/most_likely_bracket）
+        # derived_outputs 自己内部已经是 5 项并行（swarm/finals/group_rank/uncertainty/most_likely_bracket）
         # 这里复用 task_derived_outputs 函数，避免重复维护清单
     }
 
@@ -1491,8 +1297,8 @@ class Scheduler:
           批 1 (并行 max_workers): 独立原子数据 — elo/weather/schedule_refresh/lineups/h2h/
               referee/squad_value/kalshi/polymarket/group_results/live_events/in_match/
               data_quality/pi_ratings/market_bias
-          批 2 (串行): cascade — synthesizer → MC → match_bias → derived_outputs（含
-              arbitrage + arbitrage_kalshi 异步 hook）→ scenarios ‖ multi_model_compare
+          批 2 (串行): cascade — synthesizer → MC → match_bias → derived_outputs
+              → scenarios ‖ multi_model_compare
           批 3 (并行 LLM, 仅 include_heavy_llm=True): injuries / upset_llm / critical_nodes
 
         所有失败完全吞掉（feedback_no_break_existing）；bootstrap 失败不影响主循环启动。
@@ -1555,7 +1361,7 @@ class Scheduler:
         log.info(f"批 1 完成: {sum(1 for _,e in results_b1.values() if e is None)}/{len(results_b1)} 成功，{time.time()-t_b1:.1f}s")
 
         # ─── 批 2：cascade ───
-        log.info("批 2: 触发 cascade（synthesizer→MC→match_bias→derived/arbitrage/scenarios）")
+        log.info("批 2: 触发 cascade（synthesizer→MC→match_bias→derived/scenarios）")
         t_b2 = time.time()
         # 强制清 dirty 标记并直接调 task_cascade（绕过 debounce）
         try:
@@ -1707,7 +1513,6 @@ TASK_REGISTRY = {
     "squad_value":         task_squad_value,
     "referee":             task_referee,
     "in_match":            task_in_match,
-    "live_trading_tick":   task_live_trading_tick,
 }
 
 

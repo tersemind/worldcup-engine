@@ -204,7 +204,7 @@ def main():
     n_chg, n_tot = write_to_external_predictions(preds)
     print(f"\n写入 {EXT_PATH.name}: {n_tot} 队 (变化 ≥0.5pp 的 {n_chg} 队)")
 
-    # 回写到 teams.json[*].market_implied，让 synthesizer/arbitrage 用实时市场价
+    # 回写到 teams.json[*].market_implied，让 synthesizer 用实时市场价
     n_synced = sync_to_teams_json(preds)
     print(f"回写 teams.json: 更新 {n_synced} 队的 market_implied")
 

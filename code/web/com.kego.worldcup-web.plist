@@ -18,7 +18,7 @@
     launchctl unload -w ~/Library/LaunchAgents/com.kego.worldcup-web.plist
 
   查看日志：
-    tail -f /Users/kego/project/worldcup-engine/data/web.daemon.log
+    tail -f /Users/kego/project/worldcup-predict/data/web.daemon.log
 
   代码更新后重启（kickstart）：
     launchctl kickstart -k gui/$(id -u)/com.kego.worldcup-web
@@ -40,7 +40,7 @@
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/kego/project/worldcup-engine</string>
+  <string>/Users/kego/project/worldcup-predict</string>
 
   <key>EnvironmentVariables</key>
   <dict>
@@ -65,10 +65,10 @@
   <integer>30</integer>
 
   <key>StandardOutPath</key>
-  <string>/Users/kego/project/worldcup-engine/data/web.daemon.log</string>
+  <string>/Users/kego/project/worldcup-predict/data/web.daemon.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/Users/kego/project/worldcup-engine/data/web.daemon.log</string>
+  <string>/Users/kego/project/worldcup-predict/data/web.daemon.log</string>
 
   <key>ProcessType</key>
   <string>Interactive</string>

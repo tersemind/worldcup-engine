@@ -75,7 +75,7 @@ def parse_event_ticker(event_ticker: str) -> Dict[str, str]:
 
 def fetch_kalshi() -> Dict[str, Any]:
     """从 Kalshi 公共 API 抓全部 KXWCGAME 市场"""
-    req = urllib.request.Request(KALSHI_URL, headers={"User-Agent": "worldcup-engine/1.0"})
+    req = urllib.request.Request(KALSHI_URL, headers={"User-Agent": "worldcup-predict/1.0"})
     with urllib.request.urlopen(req, timeout=15) as resp:
         return json.loads(resp.read())
 

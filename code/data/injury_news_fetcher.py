@@ -12,7 +12,7 @@
 - BBC Sport: https://feeds.bbci.co.uk/sport/football/rss.xml
 - Skysports: 通过 WebSearch 触发
 
-注：完整 LLM 解析需 API key，本模块输出"待解析队列"供 Claude 在 /wc-engine refresh injuries 时人工辅助处理
+注：完整 LLM 解析需 API key，本模块输出"待解析队列"供 Claude 在 /wc-predict refresh injuries 时人工辅助处理
 """
 import json
 import re

@@ -27,8 +27,8 @@ from collections import defaultdict
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.io import DATA_RAW
 
-HISTORY_FILE = Path.home() / ".codebuddy" / "worldcup-engine" / "history.csv"
-CALIBRATION_FILE = Path.home() / ".codebuddy" / "worldcup-engine" / "data" / "outputs" / "calibration.json"
+HISTORY_FILE = Path.home() / ".codebuddy" / "worldcup-predict" / "history.csv"
+CALIBRATION_FILE = Path.home() / ".codebuddy" / "worldcup-predict" / "data" / "outputs" / "calibration.json"
 
 
 def init_history():

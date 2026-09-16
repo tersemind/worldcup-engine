@@ -10,12 +10,12 @@
 
 set -e
 
-PLIST_SRC="/Users/kego/.codebuddy/worldcup-engine/code/data/com.kego.worldcup-scheduler.plist"
+PLIST_SRC="/Users/kego/.codebuddy/worldcup-predict/code/data/com.kego.worldcup-scheduler.plist"
 PLIST_DST="$HOME/Library/LaunchAgents/com.kego.worldcup-scheduler.plist"
 LABEL="com.kego.worldcup-scheduler"
-LOG_FILE="/Users/kego/.codebuddy/worldcup-engine/data/scheduler.daemon.log"
-RESILIENT_LOG="/Users/kego/.codebuddy/worldcup-engine/data/scheduler.resilient.log"
-PID_FILE="/Users/kego/.codebuddy/worldcup-engine/data/scheduler.pid"
+LOG_FILE="/Users/kego/.codebuddy/worldcup-predict/data/scheduler.daemon.log"
+RESILIENT_LOG="/Users/kego/.codebuddy/worldcup-predict/data/scheduler.resilient.log"
+PID_FILE="/Users/kego/.codebuddy/worldcup-predict/data/scheduler.pid"
 
 cmd_install() {
   echo "📦 安装 LaunchAgent..."
@@ -25,7 +25,7 @@ cmd_install() {
     OLD_PID=$(cat "$PID_FILE" 2>/dev/null || echo "")
     if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
       echo "  检测到现有 daemon (PID=$OLD_PID)，先停止以免和 launchd 冲突"
-      python3 /Users/kego/.codebuddy/worldcup-engine/code/data/scheduler_daemon.py stop || true
+      python3 /Users/kego/.codebuddy/worldcup-predict/code/data/scheduler_daemon.py stop || true
       sleep 2
     fi
   fi

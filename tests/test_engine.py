@@ -1,5 +1,5 @@
 """
-WorldCup Engine 核心模块单元测试
+WorldCup Predict 核心模块单元测试
 
 运行：
   python3 -m pytest tests/  

@@ -1,9 +1,9 @@
-# WorldCup Engine v1.2 — Docker Image
+# WorldCup Predict v1.2 — Docker Image
 FROM python:3.11-slim
 
-LABEL maintainer="WorldCup Engine"
+LABEL maintainer="WorldCup Predict"
 LABEL version="1.2"
-LABEL description="2026 World Cup prediction engine — Monte Carlo + ML + Arbitrage"
+LABEL description="2026 World Cup prediction engine — Monte Carlo + ML"
 
 WORKDIR /app
 
@@ -27,7 +27,7 @@ ENTRYPOINT ["python3"]
 CMD ["code/web/server.py", "8088"]
 
 # 其他可用入口（通过 docker run 覆盖 CMD）：
-# docker run -p 8088:8088 worldcup-engine
-# docker run worldcup-engine code/run_tournament.py 100000
-# docker run worldcup-engine code/models/calibrator.py report
-# docker run worldcup-engine code/backtest/run_backtest.py 2018
+# docker run -p 8088:8088 worldcup-predict
+# docker run worldcup-predict code/run_tournament.py 100000
+# docker run worldcup-predict code/models/calibrator.py report
+# docker run worldcup-predict code/backtest/run_backtest.py 2018

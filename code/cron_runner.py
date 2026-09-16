@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WorldCup Engine 每日调度链路（v2）
+WorldCup Predict 每日调度链路（v2）
 ==================================
 
 8 步流水线：
@@ -282,7 +282,7 @@ def run_pipeline(skip: Optional[List[str]] = None,
     only = set(only or [])
 
     log("=" * 60)
-    log(f"🚀 WorldCup Engine 调度链 启动 ({'DRY-RUN' if dry_run else 'LIVE'})")
+    log(f"🚀 WorldCup Predict 调度链 启动 ({'DRY-RUN' if dry_run else 'LIVE'})")
     log("=" * 60)
 
     pipeline = build_pipeline()
@@ -361,7 +361,7 @@ def install_hint():
 
 # ============ CLI ============
 def main():
-    p = argparse.ArgumentParser(description="WorldCup Engine 每日调度")
+    p = argparse.ArgumentParser(description="WorldCup Predict 每日调度")
     p.add_argument("--skip", default="",
                    help="逗号分隔的跳过步骤，如 --skip fetch_market,uncertainty")
     p.add_argument("--only", default="",

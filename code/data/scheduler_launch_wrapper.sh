@@ -10,7 +10,7 @@ fi
 
 # ── LLM key 健康检查 ──
 # 缺 key 时直接退出+落盘日志，避免 daemon 静默启动后所有 LLMAgent 都走规则降级
-LOG_DIR="/Users/kego/.codebuddy/worldcup-engine/code/data/logs"
+LOG_DIR="/Users/kego/.codebuddy/worldcup-predict/code/data/logs"
 mkdir -p "$LOG_DIR"
 HEALTH_LOG="$LOG_DIR/scheduler_launch_health.log"
 TS="$(date '+%Y-%m-%d %H:%M:%S')"
@@ -34,5 +34,5 @@ echo "[$TS] OK: LLM key 健康检查通过 (model=${WORLDCUP_LLM_MODEL:-default}
 export WORLDCUP_LLM_REQUIRE
 
 exec /usr/bin/python3 -u \
-  /Users/kego/.codebuddy/worldcup-engine/code/data/scheduler_resilient_start.py \
+  /Users/kego/.codebuddy/worldcup-predict/code/data/scheduler_resilient_start.py \
   "$@"

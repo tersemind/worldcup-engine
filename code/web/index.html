@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>🏆 2026 WorldCup Engine Dashboard</title>
+<title>🏆 2026 WorldCup Predict Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
 <style>
   body {
@@ -51,7 +51,7 @@
 <body>
 
 <h1 style="display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;">
-  🏆 2026 WorldCup Engine Dashboard
+  🏆 2026 WorldCup Predict Dashboard
   <span id="global-channel-toggle" style="font-size:0.4em;font-weight:normal;display:inline-flex;gap:4px;background:rgba(255,255,255,0.05);padding:4px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);">
     <button class="ch-btn active" data-ch="base"
       style="background:#ffd700;color:#1a1a2e;border:none;padding:4px 12px;border-radius:4px;cursor:pointer;font-weight:bold;font-size:0.95em;"
@@ -80,8 +80,7 @@
   <button class="tab-btn" data-tab="path_dist">🎲 多候选轨迹</button>
   <button class="tab-btn" data-tab="critical_compare">🔬 AI 微调影响</button>
   <button class="tab-btn" data-tab="backtest">📈 历史回测表现</button>
-  <button class="tab-btn" data-tab="timeseries">📉 概率走势</button>
-  <button class="tab-btn" data-tab="trading">💵 交易下注</button>
+  <button class="tab-btn" data-tab="timeseries"> 概率走势</button>
 </div>
 
 <style>
@@ -193,88 +192,6 @@
 </div>
 </div><!-- /tab-overview -->
 
-<!-- ========== Tab: 交易下注 ========== -->
-<div id="tab-trading" class="tab-content">
-  <div style="max-width:1400px;margin:0 auto">
-
-    <!-- 顶部 banner -->
-    <div style="background:linear-gradient(135deg,#1a3a2e 0%,#0f1f1a 100%);
-                border:1px solid #10b981;border-radius:8px;padding:18px 24px;margin-bottom:20px">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
-        <div>
-          <h2 style="margin:0;color:#10b981">💵 交易下注 · Arbitrage Signals</h2>
-          <div style="font-size:13px;color:#aaa;margin-top:6px">
-            模型预测 vs 真实市场赔率的偏差扫描器 · Quarter Kelly 仓位建议 · 一键跳预测市场下注
-          </div>
-        </div>
-        <div style="font-size:12px;color:#888;text-align:right;line-height:1.6">
-          数据源：<a href="https://polymarket.com/event/world-cup-winner" target="_blank" rel="noopener" style="color:#3b82f6">Polymarket ↗</a>
-          + <a href="https://kalshi.com/markets/kxwcgame" target="_blank" rel="noopener" style="color:#3b82f6">Kalshi ↗</a><br>
-          <span id="trading-refresh-status">⏳ 加载中</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 风险提示 -->
-    <div style="background:#1a1a2e;border-left:3px solid #f59e0b;padding:10px 16px;margin-bottom:20px;
-                border-radius:4px;font-size:12px;color:#ccc;line-height:1.7">
-      ⚠️ <b>风险提示：</b>所有信号基于模型估计概率，置信度档次：低-中（&lt;60%）。
-      Quarter Kelly 已是稳健折扣，但仍建议：① 单注不超总仓位 30%；② 设置止损线（-30%）；
-      ③ 关注 95% CI（置信区间跨过市场价时不建议下注）；④ 决赛单场赛制随机性高，谨慎追高。
-    </div>
-
-    <!-- 实时 Live Banner（无 live 时整块隐藏） -->
-    <div id="live-banner" style="display:none;background:linear-gradient(135deg,#3a1a1a 0%,#2a1010 100%);
-                                  border:1px solid #ef4444;border-radius:8px;padding:14px 18px;margin-bottom:20px">
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:8px">
-        <div>
-          <span style="color:#ef4444;font-weight:bold;font-size:14px">🔴 LIVE · 量化高频通道</span>
-          <span id="live-banner-meta" style="color:#aaa;font-size:12px;margin-left:10px"></span>
-        </div>
-        <div style="font-size:11px;color:#666">
-          每 60s 自动 tick · v1 硬事实 + v2 ESPN 统计 + v3' 市场异动
-          · <a href="/api/in_match_live" target="_blank" style="color:#666">/api/in_match_live</a>
-        </div>
-      </div>
-      <div id="live-matches-block" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px"></div>
-      <div id="live-anomalies-block" style="font-size:12px;color:#fbbf24"></div>
-    </div>
-
-    <!-- 市场切换 tab -->
-    <div class="card full-width">
-      <h2>📈 套利信号
-        <span id="arb-market-meta" style="font-size:12px;font-weight:normal;color:#888;margin-left:10px"></span>
-      </h2>
-      <div style="margin-bottom:14px;border-bottom:1px solid #2a2a2a">
-        <button id="arb-tab-poly" class="arb-tab arb-tab-active"
-                style="background:none;border:none;color:#10b981;border-bottom:2px solid #10b981;
-                       padding:8px 18px;cursor:pointer;font-size:14px;font-weight:600">
-          🏆 夺冠盘（Polymarket）
-        </button>
-        <button id="arb-tab-kalshi" class="arb-tab"
-                style="background:none;border:none;color:#888;border-bottom:2px solid transparent;
-                       padding:8px 18px;cursor:pointer;font-size:14px">
-          🎯 单场盘（Kalshi）
-        </button>
-      </div>
-
-      <!-- 夺冠盘子面板 -->
-      <div id="arbitrage-table" class="loading">加载中...</div>
-
-      <!-- 单场盘子面板：套利信号 + 完整单场赔率表 -->
-      <div id="arbitrage-kalshi-panel" style="display:none">
-        <h3 style="margin:0 0 8px;font-size:14px;color:#10b981">🎯 单场套利信号（模型 vs Kalshi，按偏差排序）</h3>
-        <div id="arbitrage-kalshi-table" class="loading">加载中...</div>
-
-        <h3 style="margin:24px 0 8px;font-size:14px;color:#aaa">📋 全部 Kalshi 单场赔率（H/D/A）
-          <span id="kalshi-market-meta" style="font-size:12px;font-weight:normal;color:#888;margin-left:10px"></span>
-        </h3>
-        <div id="kalshi-table" class="loading">加载中...</div>
-      </div>
-    </div>
-
-  </div>
-</div><!-- /tab-trading -->
 
 <!-- ========== Tab: 小组赛 ========== -->
 <div id="tab-groups" class="tab-content">
@@ -684,7 +601,7 @@
 </div>
 
 <div class="footer">
-  WorldCup Engine v2.0 · 17-Agent Swarm · 8 AI Agents<br>
+  WorldCup Predict v2.0 · 17-Agent Swarm · 8 AI Agents<br>
   Data: eloratings.net + Polymarket + StatsBomb + Transfermarkt + martj42
 </div>
 
@@ -2504,373 +2421,6 @@ async function renderSchedulerDashboard() {
   document.getElementById('scheduler-dashboard').innerHTML = html;
 }
 
-// === 4. 套利信号表 ===
-// S3: 顶部展示 _freshness（触发源 + 模型/市场快照时间 + 上次刷新时间 + 实时性标签）
-function _fmtFreshness(fr) {
-  if (!fr) return '';
-  const fmtTime = (iso) => {
-    if (!iso) return '?';
-    // "2026-06-13T01:22:30" → "01:22:30"
-    const m = iso.match(/T(\d{2}:\d{2}:\d{2})/);
-    return m ? m[1] : iso;
-  };
-  const fmtDate = (iso) => {
-    if (!iso) return '?';
-    const m = iso.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
-    return m ? `${m[1].slice(5)} ${m[2]}` : iso;
-  };
-  // 计算市场快照新鲜度（秒）
-  let ageBadge = '';
-  if (fr.market_snapshot_ts) {
-    const ageSec = (Date.now() - Date.parse(fr.market_snapshot_ts)) / 1000;
-    if (ageSec < 120) ageBadge = `<span style="color:#10b981;font-weight:600">● 实时</span>`;
-    else if (ageSec < 1800) ageBadge = `<span style="color:#10b981">● ${Math.round(ageSec/60)}分钟前</span>`;
-    else if (ageSec < 3600) ageBadge = `<span style="color:#fbbf24">● ${Math.round(ageSec/60)}分钟前</span>`;
-    else ageBadge = `<span style="color:#ef4444">● ${(ageSec/3600).toFixed(1)}小时前</span>`;
-  }
-  const triggerIcon = fr.trigger === 'kalshi' ? '🎯' :
-                      fr.trigger === 'polymarket' ? '📊' :
-                      fr.trigger === 'cascade' ? '🔄' : '📡';
-  return `<div class="subtitle" style="text-align:left;color:#888;font-size:0.85em;margin-bottom:10px;">
-    ${triggerIcon} 触发源: <b>${fr.trigger || '?'}</b>
-    · 模型快照 ${fmtDate(fr.model_snapshot_ts)}
-    · 市场快照 ${fmtDate(fr.market_snapshot_ts)} ${ageBadge}
-    · 信号刷新于 ${fmtTime(fr.refreshed_at)}
-  </div>`;
-}
-
-async function renderArbitrage() {
-  const data = await fetchJSON('/api/arbitrage');
-  const buys = data.signals.filter(s => s.type === 'BUY').slice(0, 8);
-
-  // 标题旁的市场标注（用 data.market 兜底 data.signals[0]）
-  const mk = data.market || {};
-  const firstSig = data.signals && data.signals[0];
-  const mkName = mk.name || (firstSig && firstSig.market_name) || '2026 FIFA World Cup Winner';
-  const mkVenue = mk.venue || (firstSig && firstSig.market_venue) || 'Polymarket';
-  const mkEventUrl = mk.event_url || (firstSig && firstSig.event_url) || 'https://polymarket.com/event/world-cup-winner';
-  const metaEl = document.getElementById('arb-market-meta');
-  if (metaEl) {
-    const polyHtml = `· 市场：<a href="${mkEventUrl}" target="_blank" rel="noopener" style="color:#3b82f6">${mkName} @ ${mkVenue} ↗</a>` +
-      (mk.note ? ` <span title="${mk.note}" style="cursor:help">ⓘ</span>` : '');
-    metaEl.dataset.polyHtml = polyHtml;
-    // 只有当前激活 tab 是 poly 时才覆盖（避免切到 kalshi 后又被刷回去）
-    if ((metaEl.dataset.activeTab || 'poly') === 'poly') {
-      metaEl.innerHTML = polyHtml;
-    }
-  }
-
-  let html = _fmtFreshness(data._freshness);
-  html += `<div style="font-size:11px;color:#888;margin-bottom:6px">
-    每行 team = "该队夺冠"的 Yes 合约；点击 <b>下注 ↗</b> 跳转 Polymarket 对应市场
-  </div>`;
-
-  html += `<table><thead><tr>
-    <th>Grade</th><th>Team</th><th>模型%</th><th>市场%</th><th>Edge</th>
-    <th>赔率</th><th>EV%</th><th>建议下注</th><th>入口</th>
-  </tr></thead><tbody>`;
-
-  for (const s of buys) {
-    const gradeClass = s.grade === 'S' || s.grade === 'A' ? 'grade-a' :
-                       s.grade === 'B' ? 'grade-b' : 'grade-c';
-    const url = s.market_url || mkEventUrl;
-    const venue = s.market_venue || mkVenue;
-    html += `<tr>
-      <td><span class="${gradeClass}">${s.grade}</span></td>
-      <td><b>${zh(s.team)}</b></td>
-      <td>${s.model_prob.toFixed(1)}%</td>
-      <td>${s.market_prob.toFixed(1)}%</td>
-      <td class="pos">+${s.edge_pp.toFixed(1)}pp</td>
-      <td>${s.decimal_odds.toFixed(1)}x</td>
-      <td class="pos">+${s.ev_pct.toFixed(1)}%</td>
-      <td>$${s.suggested_bet.toFixed(0)}</td>
-      <td><a href="${url}" target="_blank" rel="noopener"
-             title="到 ${venue} 下注 ${zh(s.team)}夺冠（在新标签页打开）"
-             style="color:#10b981;font-weight:600;text-decoration:none">下注 ↗</a></td>
-    </tr>`;
-  }
-  html += '</tbody></table>';
-  document.getElementById('arbitrage-table').innerHTML = html;
-}
-
-// === 4a-2. Kalshi 单场套利信号 ===
-async function renderArbitrageKalshi() {
-  let d;
-  try {
-    d = await fetchJSON('/api/arbitrage_kalshi');
-  } catch (e) {
-    document.getElementById('arbitrage-kalshi-table').innerHTML =
-      `<div style="color:#ef4444">/api/arbitrage_kalshi 加载失败: ${e.message}<br>
-       <small>需要 match_bias.json + kalshi_match_odds.json 都存在，cascade 跑完后会自动生成</small></div>`;
-    return;
-  }
-
-  const mk = d.market || {};
-  // top 12 BUY 信号（已按 |edge| 降序）
-  const buys = (d.signals || []).filter(s => s.type === 'BUY').slice(0, 12);
-  const sells = (d.signals || []).filter(s => s.type === 'SELL').slice(0, 6);
-
-  let html = '';
-  // freshness 行
-  const fr = d._freshness || {};
-  if (fr.refreshed_at) {
-    html += `<div style="font-size:11px;color:#888;margin-bottom:6px">
-      🟢 刷新于 ${fr.refreshed_at.replace('T',' ')}（${fr.trigger || '?'}）
-      · 模型快照 ${fr.bias_snapshot_ts ? fr.bias_snapshot_ts.replace('T',' ') : '?'}
-      · Kalshi 快照 ${fr.kalshi_snapshot_ts ? fr.kalshi_snapshot_ts.replace('T',' ') : '?'}
-    </div>`;
-  }
-
-  html += `<div style="font-size:11px;color:#888;margin-bottom:6px">
-    模型 P(主胜/平/客胜) vs Kalshi P(主胜/平/客胜)，min_edge=3pp；点击 <b>下注 ↗</b> 跳 Kalshi 对应比赛
-  </div>`;
-
-  if (buys.length === 0 && sells.length === 0) {
-    html += `<div style="color:#888;padding:10px">暂无满足阈值的信号（市场与模型基本一致）</div>`;
-    document.getElementById('arbitrage-kalshi-table').innerHTML = html;
-    return;
-  }
-
-  html += `<table><thead><tr>
-    <th>Grade</th><th>日期</th><th>比赛</th><th>方向</th>
-    <th>模型%</th><th>市场%</th><th>Edge</th><th>赔率</th><th>EV%</th><th>建议下注</th><th>入口</th>
-  </tr></thead><tbody>`;
-
-  for (const s of buys) {
-    const gradeClass = s.grade === 'S' || s.grade === 'A' ? 'grade-a' :
-                       s.grade === 'B' ? 'grade-b' : 'grade-c';
-    // 把 side_label 里的英文队名翻译成中文
-    let sideLabel = s.side_label || '';
-    sideLabel = sideLabel.replace(s.team_a, zh(s.team_a)).replace(s.team_b, zh(s.team_b));
-    html += `<tr>
-      <td><span class="${gradeClass}">${s.grade}</span></td>
-      <td style="color:#888;font-size:11px">${s.date}</td>
-      <td><b>${zh(s.team_a)}</b> vs <b>${zh(s.team_b)}</b></td>
-      <td>${sideLabel}</td>
-      <td>${s.model_prob.toFixed(1)}%</td>
-      <td>${s.market_prob.toFixed(1)}%</td>
-      <td class="pos">+${s.edge_pp.toFixed(1)}pp</td>
-      <td>${s.decimal_odds.toFixed(2)}x</td>
-      <td class="pos">+${s.ev_pct.toFixed(1)}%</td>
-      <td>$${s.suggested_bet.toFixed(0)}</td>
-      <td><a href="${s.market_url}" target="_blank" rel="noopener"
-             title="到 Kalshi 下注（在新标签页打开）"
-             style="color:#10b981;font-weight:600;text-decoration:none">下注 ↗</a></td>
-    </tr>`;
-  }
-  html += '</tbody></table>';
-
-  if (sells.length > 0) {
-    html += `<details style="margin-top:12px"><summary style="cursor:pointer;color:#f59e0b;font-size:12px">
-      ⚠️ AVOID 信号（市场高估，建议不下注或反向）：${sells.length} 个</summary>
-      <table style="margin-top:8px;opacity:0.8"><thead><tr>
-        <th>日期</th><th>比赛</th><th>方向</th>
-        <th>模型%</th><th>市场%</th><th>Edge</th><th>入口</th>
-      </tr></thead><tbody>`;
-    for (const s of sells) {
-      let sideLabel = (s.side_label || '').replace(s.team_a, zh(s.team_a)).replace(s.team_b, zh(s.team_b));
-      html += `<tr>
-        <td style="color:#888;font-size:11px">${s.date}</td>
-        <td>${zh(s.team_a)} vs ${zh(s.team_b)}</td>
-        <td>${sideLabel}</td>
-        <td>${s.model_prob.toFixed(1)}%</td>
-        <td>${s.market_prob.toFixed(1)}%</td>
-        <td style="color:#ef4444">${s.edge_pp.toFixed(1)}pp</td>
-        <td><a href="${s.market_url}" target="_blank" rel="noopener" style="color:#888">查看 ↗</a></td>
-      </tr>`;
-    }
-    html += '</tbody></table></details>';
-  }
-
-  document.getElementById('arbitrage-kalshi-table').innerHTML = html;
-}
-
-// Tab 切换：夺冠盘 / 单场盘
-function _setupArbTabs() {
-  const tabPoly = document.getElementById('arb-tab-poly');
-  const tabKalshi = document.getElementById('arb-tab-kalshi');
-  const panelPoly = document.getElementById('arbitrage-table');
-  const panelKalshi = document.getElementById('arbitrage-kalshi-panel');
-  if (!tabPoly || !tabKalshi) return;
-
-  const setActive = (which) => {
-    const metaEl = document.getElementById('arb-market-meta');
-    if (which === 'poly') {
-      tabPoly.style.color = '#10b981'; tabPoly.style.borderBottomColor = '#10b981'; tabPoly.style.fontWeight = '600';
-      tabKalshi.style.color = '#888'; tabKalshi.style.borderBottomColor = 'transparent'; tabKalshi.style.fontWeight = '400';
-      panelPoly.style.display = ''; panelKalshi.style.display = 'none';
-      if (metaEl) {
-        metaEl.dataset.activeTab = 'poly';
-        // 优先用缓存（renderArbitrage 已写过）；首次切之前可能为空，触发重渲
-        if (metaEl.dataset.polyHtml) metaEl.innerHTML = metaEl.dataset.polyHtml;
-      }
-    } else {
-      tabKalshi.style.color = '#10b981'; tabKalshi.style.borderBottomColor = '#10b981'; tabKalshi.style.fontWeight = '600';
-      tabPoly.style.color = '#888'; tabPoly.style.borderBottomColor = 'transparent'; tabPoly.style.fontWeight = '400';
-      panelPoly.style.display = 'none'; panelKalshi.style.display = '';
-      if (metaEl) {
-        metaEl.dataset.activeTab = 'kalshi';
-        metaEl.innerHTML = `· 市场：<a href="https://kalshi.com/markets/kxwcgame" target="_blank" rel="noopener" style="color:#3b82f6">FIFA World Cup 2026 — Single Game Winner (H/D/A) @ Kalshi ↗</a> <span title="单场胜平负盘：模型 P(H/D/A) vs Kalshi P(H/D/A)；min_edge=3pp" style="cursor:help">ⓘ</span>`;
-      }
-    }
-  };
-  tabPoly.addEventListener('click', () => setActive('poly'));
-  tabKalshi.addEventListener('click', () => setActive('kalshi'));
-}
-
-// === 4b. Kalshi 单场赔率（H/D/A）—— 与套利信号表同构（每场拆 3 行）===
-async function renderKalshi() {
-  let d;
-  try {
-    d = await fetchJSON('/api/arbitrage_kalshi?all=1');
-  } catch (e) {
-    document.getElementById('kalshi-table').innerHTML =
-      `<div style="color:#ef4444">/api/arbitrage_kalshi?all=1 加载失败: ${e.message}<br>
-       <small>需要 match_bias.json + kalshi_match_odds.json 都存在，cascade 跑完后会自动生成</small></div>`;
-    return;
-  }
-  // 预热赛程索引，便于换算北京时间
-  await getScheduleIndex();
-
-  const mk = d.market || {};
-  const seriesUrl = mk.series_url || 'https://kalshi.com/markets/kxwcgame';
-  const fr = d._freshness || {};
-  const metaEl = document.getElementById('kalshi-market-meta');
-  if (metaEl) {
-    metaEl.innerHTML = `· 市场：<a href="${seriesUrl}" target="_blank" rel="noopener" style="color:#3b82f6">${mk.name || 'Single Game Winner'} @ ${mk.venue || 'Kalshi'} ↗</a>` +
-      (mk.note ? ` <span title="${mk.note}" style="cursor:help">ⓘ</span>` : '') +
-      ` · 共 ${d.n_signals || 0} 个方向（H/D/A）` +
-      (fr.refreshed_at ? ` · 刷新于 ${fr.refreshed_at.replace('T', ' ')}` : '');
-  }
-
-  const signals = d.signals || [];
-  if (signals.length === 0) {
-    document.getElementById('kalshi-table').innerHTML =
-      `<div style="color:#888;padding:10px">暂无单场赔率数据</div>`;
-    return;
-  }
-
-  // 排序：先按日期 → 比赛 → side(home/draw/away)
-  const sideOrder = { home: 0, draw: 1, away: 2 };
-  const sorted = signals.slice().sort((a, b) => {
-    if (a.date !== b.date) return a.date.localeCompare(b.date);
-    const ka = `${a.team_a}|${a.team_b}`, kb = `${b.team_a}|${b.team_b}`;
-    if (ka !== kb) return ka.localeCompare(kb);
-    return (sideOrder[a.side] ?? 9) - (sideOrder[b.side] ?? 9);
-  });
-
-  // 按日期切未来/已过
-  const today = new Date().toISOString().slice(0, 10);
-  const upcoming = sorted.filter(s => s.date >= today);
-  const past = sorted.filter(s => s.date < today);
-
-  // 上一行的 (date,match) 用于 rowspan 风格的合并显示
-  let _lastKey = null;
-  const renderRow = (s) => {
-    const matchKey = `${s.date}|${s.team_a}|${s.team_b}`;
-    const isFirstOfMatch = matchKey !== _lastKey;
-    _lastKey = matchKey;
-
-    const gradeClass = s.grade === 'S' || s.grade === 'A' ? 'grade-a' :
-                       s.grade === 'B' ? 'grade-b' :
-                       s.grade === 'C' ? 'grade-c' : '';
-    const gradeCell = s.grade && s.grade !== '-' ?
-      `<span class="${gradeClass}">${s.grade}</span>` :
-      `<span style="color:#666">-</span>`;
-
-    // edge 着色：BUY=绿 / SELL=红 / NEUTRAL=灰
-    const edgeStyle = s.type === 'BUY' ? 'color:#10b981;font-weight:600' :
-                      s.type === 'SELL' ? 'color:#ef4444' :
-                      'color:#888';
-    const evStyle = s.ev_pct > 0 ? 'color:#10b981' :
-                    s.ev_pct < 0 ? 'color:#ef4444' : 'color:#888';
-    const sign = (v) => (v >= 0 ? '+' : '') + v.toFixed(1);
-
-    let sideLabel = s.side_label || '';
-    sideLabel = sideLabel.replace(s.team_a, zh(s.team_a)).replace(s.team_b, zh(s.team_b));
-
-    // 联表查 time_local/tz 换算北京时间
-    const _ko = lookupKickoff(s.team_a, s.team_b, s.date);
-    let _bjCell = s.date, _bjTip = '';
-    if (_ko && _ko.time_local) {
-      const _bj = toBeijingTime(s.date, _ko.time_local, _ko.tz);
-      _bjCell = `${_bj.date} ${_bj.time}`;
-      _bjTip = ` title="场地当地：${_bj.raw}"`;
-    }
-
-    // 同场次第二/三行的日期与比赛列淡化
-    const dateCell = isFirstOfMatch
-      ? `<td style="color:#888;font-size:11px"${_bjTip}>${_bjCell}</td>`
-      : `<td style="color:#444;font-size:11px"${_bjTip}>${_bjCell}</td>`;
-    const matchCell = isFirstOfMatch
-      ? `<td><b>${zh(s.team_a)}</b> vs <b>${zh(s.team_b)}</b></td>`
-      : `<td style="color:#666">${zh(s.team_a)} vs ${zh(s.team_b)}</td>`;
-
-    const betCell = s.suggested_bet > 0 ?
-      `$${s.suggested_bet.toFixed(0)}` :
-      `<span style="color:#666">-</span>`;
-    const linkColor = s.type === 'BUY' ? '#10b981' :
-                      s.type === 'SELL' ? '#888' : '#888';
-    const linkLabel = s.type === 'BUY' ? '下注 ↗' :
-                      s.type === 'SELL' ? '查看 ↗' : '查看 ↗';
-
-    return `<tr>
-      <td>${gradeCell}</td>
-      ${dateCell}
-      ${matchCell}
-      <td>${sideLabel}</td>
-      <td style="text-align:right">${s.model_prob.toFixed(1)}%</td>
-      <td style="text-align:right">${s.market_prob.toFixed(1)}%</td>
-      <td style="text-align:right;${edgeStyle}">${sign(s.edge_pp)}pp</td>
-      <td style="text-align:right">${s.decimal_odds ? s.decimal_odds.toFixed(2) + 'x' : '-'}</td>
-      <td style="text-align:right;${evStyle}">${sign(s.ev_pct)}%</td>
-      <td style="text-align:right">${betCell}</td>
-      <td style="text-align:center">
-        <a href="${s.market_url}" target="_blank" rel="noopener"
-           title="到 Kalshi ${zh(s.team_a)} vs ${zh(s.team_b)} - ${sideLabel}"
-           style="color:${linkColor};font-weight:600;text-decoration:none">${linkLabel}</a>
-      </td>
-    </tr>`;
-  };
-
-  const tableHead = `<thead><tr>
-    <th>Grade</th>
-    <th title="北京时间（鼠标悬停看场地当地时间）">日期 (北京)</th>
-    <th>比赛</th>
-    <th>方向</th>
-    <th style="text-align:right">模型%</th>
-    <th style="text-align:right">市场%</th>
-    <th style="text-align:right">Edge</th>
-    <th style="text-align:right">赔率</th>
-    <th style="text-align:right">EV%</th>
-    <th style="text-align:right">建议下注</th>
-    <th>入口</th>
-  </tr></thead>`;
-
-  let html = `<div style="font-size:11px;color:#888;margin-bottom:6px">
-    每场拆 3 行（主胜 / 平 / 客胜）；指标与"单场套利信号"一致：Edge=模型%-市场%，EV%=Kelly 期望收益率，BUY/SELL 阈值 ±3pp，NEUTRAL 为灰色
-  </div>`;
-
-  if (upcoming.length > 0) {
-    _lastKey = null;
-    html += `<table>${tableHead}<tbody>`;
-    html += upcoming.map(renderRow).join('');
-    html += '</tbody></table>';
-  } else {
-    html += `<div style="color:#888;padding:10px">暂无未来比赛数据</div>`;
-  }
-
-  if (past.length > 0) {
-    _lastKey = null;
-    const pastRows = past.map(renderRow).join('');
-    html += `<details style="margin-top:12px"><summary style="cursor:pointer;color:#888;font-size:12px">
-      ▶ 已结束 ${past.length} 行（点击展开）</summary>
-      <table style="margin-top:8px;opacity:0.7">${tableHead}<tbody>${pastRows}</tbody></table></details>`;
-  }
-
-  document.getElementById('kalshi-table').innerHTML = html;
-}
-
 // === 5. 回测结果 ===
 async function renderBacktest() {
   try {
@@ -3328,12 +2878,8 @@ Promise.all([
   renderScenarios(),
   renderFinals(),
   renderSchedulerDashboard(),
-  renderArbitrage(),
-  renderArbitrageKalshi(),
-  renderKalshi(),
   renderBacktest(),
   renderHeatmap(),
-  (typeof renderLiveBanner === 'function' ? renderLiveBanner() : Promise.resolve())
 ]).catch(e => console.error('加载失败:', e));
 
 // ── 调度仪表盘动态刷新：60s 轮询 + 倒计时 + 上次刷新指示
@@ -3342,8 +2888,7 @@ let _schedLastRefresh = Date.now();
 let _schedRefreshing = false;
 
 function _updateSchedRefreshBadge() {
-  const els = [document.getElementById('sched-refresh-status'),
-               document.getElementById('trading-refresh-status')].filter(Boolean);
+  const els = [document.getElementById('sched-refresh-status')].filter(Boolean);
   if (els.length === 0) return;
   let text, color;
   if (_schedRefreshing) {
@@ -3359,78 +2904,13 @@ function _updateSchedRefreshBadge() {
   els.forEach(el => { el.innerHTML = text; el.style.color = color; });
 }
 
-// quant live banner：尝试拉 /api/in_match_live；无 live 时整块隐藏，错误时静默不报红
-async function renderLiveBanner() {
-  const banner = document.getElementById('live-banner');
-  if (!banner) return;
-  let data = null;
-  try {
-    const r = await fetch('/api/in_match_live', { cache: 'no-store' });
-    if (!r.ok) { banner.style.display = 'none'; return; }
-    data = await r.json();
-  } catch (e) {
-    banner.style.display = 'none';
-    return;
-  }
-  const matches = (data && data.live_predictions) || [];
-  const anomalies = (data && data.market_anomalies) || [];
-  if (matches.length === 0 && anomalies.length === 0) {
-    banner.style.display = 'none';
-    return;
-  }
-  banner.style.display = 'block';
-  const ts = data.ts || '';
-  const elapsed = data.elapsed_sec != null ? `${data.elapsed_sec}s` : '?';
-  const meta = `tick @ ${ts} · 耗时 ${elapsed} · 活动场次 ${matches.length} · 异动 ${anomalies.length}`;
-  const metaEl = document.getElementById('live-banner-meta');
-  if (metaEl) metaEl.textContent = meta;
-
-  // 比赛卡片
-  const block = document.getElementById('live-matches-block');
-  if (block) {
-    block.innerHTML = matches.map(m => {
-      const score = `${m.score_a ?? '-'}-${m.score_b ?? '-'}`;
-      const min = m.elapsed_min != null ? `${m.elapsed_min}'` : '';
-      const v1 = m.p_win_a != null ? `v1: ${(m.p_win_a*100).toFixed(0)}/${(m.p_draw*100).toFixed(0)}/${(m.p_win_b*100).toFixed(0)}%` : '';
-      const v12 = m.p_win_a_v1plus_v2 != null
-        ? ` → v1+v2: ${(m.p_win_a_v1plus_v2*100).toFixed(0)}/${(m.p_draw_v1plus_v2*100).toFixed(0)}/${(m.p_win_b_v1plus_v2*100).toFixed(0)}%`
-        : '';
-      const v2pp = m.v2 && m.v2.delta_pp_a != null ? ` (v2 Δ${m.v2.delta_pp_a>=0?'+':''}${m.v2.delta_pp_a.toFixed(2)}pp)` : '';
-      return `
-        <div style="background:rgba(0,0,0,0.4);border:1px solid #444;border-radius:6px;padding:10px 14px;min-width:240px;flex:1">
-          <div style="font-weight:bold;color:#fff;margin-bottom:4px">${m.team_a||'?'} <span style="color:#10b981">${score}</span> ${m.team_b||'?'} <span style="color:#888;font-size:12px;margin-left:6px">${min}</span></div>
-          <div style="font-size:11px;color:#aaa">${v1}${v12}${v2pp}</div>
-        </div>`;
-    }).join('');
-  }
-
-  // 异动行
-  const anomBlock = document.getElementById('live-anomalies-block');
-  if (anomBlock) {
-    if (anomalies.length === 0) {
-      anomBlock.innerHTML = '';
-    } else {
-      const top = anomalies.slice(0, 5).map(a => {
-        const sign = a.delta_pp >= 0 ? '+' : '';
-        return `⚡ <b>${a.event_ticker}</b> · <code>${a.leg}</code>: ${a.prev_pp.toFixed(1)} → ${a.now_pp.toFixed(1)} pp (Δ${sign}${a.delta_pp.toFixed(1)}pp · ${Math.round(a.window_sec)}s)`;
-      }).join(' · ');
-      const more = anomalies.length > 5 ? ` · +${anomalies.length-5} 更多` : '';
-      anomBlock.innerHTML = top + more;
-    }
-  }
-}
-
 async function _doSchedRefresh() {
   if (_schedRefreshing) return;
   _schedRefreshing = true;
   _updateSchedRefreshBadge();
   try {
     await Promise.all([
-      renderSchedulerDashboard().catch(e => console.warn('刷新调度仪表盘失败:', e)),
-      renderArbitrage().catch(e => console.warn('刷新夺冠盘套利失败:', e)),
-      renderArbitrageKalshi().catch(e => console.warn('刷新 Kalshi 套利失败:', e)),
-      renderKalshi().catch(e => console.warn('刷新 Kalshi 单场赔率失败:', e)),
-      renderLiveBanner().catch(e => console.warn('刷新 live banner 失败:', e))
+      renderSchedulerDashboard().catch(e => console.warn('刷新调度仪表盘失败:', e))
     ]);
     _schedLastRefresh = Date.now();
   } finally {
@@ -3453,15 +2933,12 @@ document.addEventListener('visibilitychange', () => {
 
 // 点击 banner 上的状态徽章可手动强刷
 document.addEventListener('click', (e) => {
-  if (e.target && (e.target.id === 'sched-refresh-status' || e.target.id === 'trading-refresh-status'))
+  if (e.target && e.target.id === 'sched-refresh-status')
     _doSchedRefresh();
 });
 
 // 首次加载完成后启动徽章
 setTimeout(() => { _schedLastRefresh = Date.now(); _updateSchedRefreshBadge(); }, 1500);
-
-// 套利信号 tab 切换：夺冠盘 ↔ 单场盘
-_setupArbTabs();
 </script>
 
 </body>

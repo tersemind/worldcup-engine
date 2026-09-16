@@ -170,7 +170,7 @@ def get_search_queries_for_claude() -> str:
     output += """
 🔧 抓取后调用方式：
 
-  python3 ~/.codebuddy/worldcup-engine/code/data/injuries_fetcher.py update <team> <player> <status>
+  python3 ~/.codebuddy/worldcup-predict/code/data/injuries_fetcher.py update <team> <player> <status>
 
   status 可选值：
     fit              = 完全健康（adj 0pp）

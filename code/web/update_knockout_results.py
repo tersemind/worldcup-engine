@@ -17,10 +17,10 @@ RESULTS_PATH = OUTPUT_DIR / "knockout_results.json"
 ACTUAL_MATCHES_PATH = OUTPUT_DIR / "actual_knockout_matches.json"
 GROUP_SCHEDULE_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "raw" / "group_schedule.json"
 
-# worldcup-engine API endpoint（本机）
+# worldcup-predict API endpoint（本机）
 API_BASE = "http://localhost:8088"
 
-# ESPN 队名标准化映射（worldcup-engine API 队名 -> ESPN displayName）
+# ESPN 队名标准化映射（worldcup-predict API 队名 -> ESPN displayName）
 # 用于处理 ESPN 与本地命名差异
 ESPN_NAME_NORMALIZE = {
     "Korea Republic": ["Korea Republic", "South Korea"],

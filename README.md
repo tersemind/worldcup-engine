@@ -1,4 +1,4 @@
-# WorldCup Engine v1.1（路径 B：联网刷新版）
+# WorldCup Predict v1.1（路径 B：联网刷新版）
 
 真实计算 + 实时数据 = 可复现的世界杯预测引擎
 
@@ -41,23 +41,23 @@
 ### 完整流程示例
 
 ```
-1. /wc-engine refresh market       → Claude 抓 Polymarket → Python 写 teams.json
-2. /wc-engine tournament 10000     → Python 跑蒙特卡洛 + 综合预测
-3. /wc-engine match Spain vs France → Python 跑单场预测
+1. /wc-predict refresh market       → Claude 抓 Polymarket → Python 写 teams.json
+2. /wc-predict tournament 10000     → Python 跑蒙特卡洛 + 综合预测
+3. /wc-predict match Spain vs France → Python 跑单场预测
 ```
 
 ### 子命令说明
 
 | 命令 | 触发动作 | 涉及工具 |
 |------|---------|---------|
-| `/wc-engine tournament [N]` | 蒙特卡洛 + 综合预测 | Bash → Python |
-| `/wc-engine match A vs B` | 单场胜平负 + 比分概率 | Bash → Python |
-| `/wc-engine refresh` | 联网刷新全字段 | WebFetch + WebSearch + Bash |
-| `/wc-engine refresh elo` | 仅 Elo（eloratings.net）| WebFetch + Bash |
-| `/wc-engine refresh market` | 仅市场赔率（Polymarket）| WebFetch + Bash |
-| `/wc-engine refresh injuries` | 仅伤病情报（ESPN/BBC）| WebSearch + 建议 |
-| `/wc-engine update <T> <F> <V>` | 手动改单字段 | Bash → Python |
-| `/wc-engine data` | 查看当前数据 | Bash → Python |
+| `/wc-predict tournament [N]` | 蒙特卡洛 + 综合预测 | Bash → Python |
+| `/wc-predict match A vs B` | 单场胜平负 + 比分概率 | Bash → Python |
+| `/wc-predict refresh` | 联网刷新全字段 | WebFetch + WebSearch + Bash |
+| `/wc-predict refresh elo` | 仅 Elo（eloratings.net）| WebFetch + Bash |
+| `/wc-predict refresh market` | 仅市场赔率（Polymarket）| WebFetch + Bash |
+| `/wc-predict refresh injuries` | 仅伤病情报（ESPN/BBC）| WebSearch + 建议 |
+| `/wc-predict update <T> <F> <V>` | 手动改单字段 | Bash → Python |
+| `/wc-predict data` | 查看当前数据 | Bash → Python |
 
 ---
 
@@ -80,7 +80,7 @@
 ## 📁 工程目录
 
 ```
-~/.codebuddy/worldcup-engine/
+~/.codebuddy/worldcup-predict/
 ├── README.md                    # 本文件
 ├── code/
 │   ├── data/
@@ -111,19 +111,19 @@
 
 ```bash
 # 查看当前数据
-python3 ~/.codebuddy/worldcup-engine/code/data/refresh_helper.py show
+python3 ~/.codebuddy/worldcup-predict/code/data/refresh_helper.py show
 
 # 手动更新单字段
-python3 ~/.codebuddy/worldcup-engine/code/data/refresh_helper.py update Spain elo 2160
+python3 ~/.codebuddy/worldcup-predict/code/data/refresh_helper.py update Spain elo 2160
 
 # 跑全锦标赛预测
-python3 ~/.codebuddy/worldcup-engine/code/run_tournament.py 10000
+python3 ~/.codebuddy/worldcup-predict/code/run_tournament.py 10000
 
 # 跑单场
-python3 ~/.codebuddy/worldcup-engine/code/predict_match.py "Spain" "France"
+python3 ~/.codebuddy/worldcup-predict/code/predict_match.py "Spain" "France"
 
 # 仅重跑综合预测（不重跑蒙特卡洛）
-python3 ~/.codebuddy/worldcup-engine/code/models/synthesizer.py
+python3 ~/.codebuddy/worldcup-predict/code/models/synthesizer.py
 ```
 
 ---
@@ -165,7 +165,7 @@ python3 ~/.codebuddy/worldcup-engine/code/models/synthesizer.py
 |------|------|------|------|
 | Prompt v1（备份）| LLM 角色扮演 | 上下文记忆 | `worldcup-predictor-prompt-v1` |
 | Prompt v1（当前）| LLM 角色扮演 | 上下文记忆 | `worldcup-predictor` |
-| **Engine v1（路径 B）** ⭐ | **真 numpy/scipy** | **联网刷新** | **`worldcup-engine`** |
+| **Engine v1（路径 B）** ⭐ | **真 numpy/scipy** | **联网刷新** | **`worldcup-predict`** |
 
 ---
 

@@ -1,6 +1,6 @@
 """
 数据刷新辅助工具：
-- 由 Claude 在 /wc-engine refresh 命令中调用
+- 由 Claude 在 /wc-predict refresh 命令中调用
 - 提供给 Claude 一个清单：当前 teams.json 数据 + 待更新字段 + 推荐数据源
 - Claude 用 WebSearch/WebFetch 抓取后，调用 update_team_field() 写回
 """
@@ -130,10 +130,10 @@ def get_refresh_checklist() -> str:
     checklist += """
 
 🔧 更新方式：
-  用 Claude 的 Edit 工具直接修改 ~/.codebuddy/worldcup-engine/data/raw/teams.json
+  用 Claude 的 Edit 工具直接修改 ~/.codebuddy/worldcup-predict/data/raw/teams.json
   
   或调用 Python 脚本：
-  python3 ~/.codebuddy/worldcup-engine/code/data/refresh_helper.py update <team> <field> <value>
+  python3 ~/.codebuddy/worldcup-predict/code/data/refresh_helper.py update <team> <field> <value>
 """
     return checklist
 

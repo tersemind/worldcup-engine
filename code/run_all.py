@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-WorldCup Engine v1.2 — 一键全流程
+WorldCup Predict v1.2 — 一键全流程
 
 依次执行：
 1. 蒙特卡洛模拟（含决赛对阵收集）
 2. 综合预测（自动读伤病库）
 3. 三情景模拟
-4. 套利信号生成
-5. 多语言报告输出
+4. 多语言报告输出
 """
 import sys
 import time
@@ -29,7 +28,7 @@ def run(cmd: list, label: str):
 
 
 def main(n_sim: int = 100000):
-    print(f"\n🚀 WorldCup Engine v1.2 — 全流程执行（N={n_sim:,}）")
+    print(f"\n🚀 WorldCup Predict v1.2 — 全流程执行（N={n_sim:,}）")
     
     t_start = time.time()
     
@@ -48,11 +47,8 @@ def main(n_sim: int = 100000):
     else:
         print("\n⏭️  跳过三情景（n_sim < 50k）")
     
-    # 4. 套利信号
-    run([str(CODE / "models" / "arbitrage.py"), "10000"], "Step 4/5: 套利信号生成")
-    
-    # 5. 三语报告
-    run([str(CODE / "models" / "report_writer.py"), "all"], "Step 5/5: 多语言报告")
+    # 4. 三语报告
+    run([str(CODE / "models" / "report_writer.py"), "all"], "Step 4/4: 多语言报告")
     
     elapsed = time.time() - t_start
     print(f"\n{'='*80}")
@@ -63,7 +59,6 @@ def main(n_sim: int = 100000):
     print(f"  - finals_matchups.json            # 决赛对阵")
     print(f"  - synthesizer_report.json         # 综合预测")
     print(f"  - three_scenarios.json            # 三情景")
-    print(f"  - arbitrage_signals.json          # 套利信号")
     print(f"  - report_zh.md / report_en.md / report_es.md  # 三语报告")
 
 
