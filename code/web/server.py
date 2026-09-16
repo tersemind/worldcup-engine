@@ -164,6 +164,60 @@ def _serve_scheduler_state() -> dict:
     return out
 
 
+
+# ─────────────────────── /api/market_history 市场概率历史 ───────────────────────
+def _serve_market_history() -> dict:
+    """按天聚合 market_bias_snapshots，返回各队市场夺冠概率的日度折线数据。
+    每天取当天最后一个快照作为代表值。
+    返回：{dates:[...], teams:{队名: [概率...]}}
+    """
+    import re as _re
+    snap_dir = DATA_OUTPUTS / "market_bias_snapshots"
+    if not snap_dir.exists():
+        return {"dates": [], "teams": {}}
+
+    # 收集所有快照文件，按文件名时间戳排序
+    files = sorted(snap_dir.glob("snapshot_*.json"))
+    # 按日期分组，每天只取最后一个
+    by_day: dict = {}
+    for f in files:
+        m = _re.match(r"snapshot_(\d{4}-\d{2}-\d{2})", f.name)
+        if m:
+            day = m.group(1)
+            by_day[day] = f  # 后来的覆盖前面的，保留最后一个
+
+    dates = sorted(by_day.keys())
+    teams_data: dict = {}
+
+    for day in dates:
+        try:
+            snap = json.loads(by_day[day].read_text(encoding="utf-8"))
+            for entry in snap.get("teams", []):
+                name = entry.get("team", "")
+                mkt  = entry.get("market_pct", 0) or 0
+                if name:
+                    if name not in teams_data:
+                        teams_data[name] = []
+                    teams_data[name].append(round(mkt, 2))
+        except Exception:
+            # 快照损坏时该天所有队补 None
+            for name in teams_data:
+                if len(teams_data[name]) < len([d for d in dates if d <= day]):
+                    teams_data[name].append(None)
+
+    # 补齐长度（部分队可能在某天快照里缺失）
+    n = len(dates)
+    for name in teams_data:
+        while len(teams_data[name]) < n:
+            teams_data[name].append(None)
+
+    # 只返回至少有一天市场概率 > 0 的队（过滤掉从未有市场数据的）
+    teams_data = {k: v for k, v in teams_data.items()
+                  if any(x and x > 0 for x in v)}
+
+    return {"dates": dates, "teams": teams_data}
+
+
 # ─────────────────────── /api/timeseries cascade 时间序列 ───────────────────────
 def _serve_timeseries(query: dict) -> dict:
     """从 data/outputs/snapshots/timeseries.jsonl 读取并按 metric 抽取。
@@ -324,6 +378,18 @@ class APIHandler(SimpleHTTPRequestHandler):
         if api_name == "scheduler":
             return self._send_json(_serve_scheduler_state())
 
+        # 实际淘汰赛赛果：直接返回 ESPN 抓取的全部已完赛比赛，不依赖预测 bracket 的 match_id
+        if api_name == "knockout_actual":
+            path = DATA_OUTPUTS / "actual_knockout_matches.json"
+            if not path.exists():
+                return self._send_json({"_source": "ESPN", "n_matches": 0, "matches": []})
+            with open(path, "r", encoding="utf-8") as f:
+                return self._send_json(json.load(f))
+
+        # 市场概率历史（按天聚合快照，返回折线图数据）
+        if api_name == "market_history":
+            return self._send_json(_serve_market_history())
+
         # 时间序列：从 snapshots/timeseries.jsonl 抽取
         if api_name == "timeseries":
             return self._send_json(_serve_timeseries(query))
@@ -395,10 +461,11 @@ class APIHandler(SimpleHTTPRequestHandler):
             self._send_json({"error": f"tournament_api import failed: {e}"}, status=500)
             return
 
-        # 双通道支持：?channel=base | ai_phase3（默认 base）
+        # 三通道支持：?channel=base | ai_phase3 | ai_confed（默认 base）
         # 仅赛程系列 API 接受此参数：groups/r32/r16/qf/sf/final_match/team_path/path_distribution
+        # ai_confed：在 base 基础上叠加 confederation 强度偏移（解决 USA/Australia 类模型-市场分化）
         channel = query.get("channel", ["base"])[0]
-        if channel not in ("base", "ai_phase3"):
+        if channel not in ("base", "ai_phase3", "ai_confed"):
             channel = "base"
 
         try:

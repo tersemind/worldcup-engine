@@ -59,6 +59,9 @@
     <button class="ch-btn" data-ch="ai_phase3"
       style="background:rgba(74,222,128,0.15);color:#4ade80;border:1px solid rgba(74,222,128,0.4);padding:4px 12px;border-radius:4px;cursor:pointer;font-size:0.95em;"
       title="AI 加权 MC（逐场 ΔE 注入 + 分段 ELO_PER_PP）+ 8 项修正">AI 通道</button>
+    <button class="ch-btn" data-ch="ai_confed"
+      style="background:rgba(34,211,238,0.15);color:#22d3ee;border:1px solid rgba(34,211,238,0.4);padding:4px 12px;border-radius:4px;cursor:pointer;font-size:0.95em;"
+      title="洲际强度校正：跨洲 WC 历史反推每洲 ELO 偏移（解决 USA/Australia 类模型-市场分化）。仅影响对阵/赛程/淘汰赛 tab">Confed 通道</button>
   </span>
 </h1>
 <div class="subtitle">真实计算 · 100,000 次蒙特卡洛 · 真实 FIFA Bracket · 17-Agent Swarm</div>
@@ -138,6 +141,29 @@
       <span id="champion-channel-hint" style="font-size:0.5em;font-weight:normal;color:#888;margin-left:10px;"></span>
     </h2>
     <div id="chart-champion" class="chart-tall"></div>
+  </div>
+
+  <div class="card full-width">
+    <h2>
+      📈 市场夺冠概率走势（按天）
+      <span style="font-size:0.5em;font-weight:normal;color:#888;margin-left:10px;">— Kalshi 市场隐含概率，每天末值，6/12 至今</span>
+    </h2>
+    <div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px;align-items:center;" id="market-history-filter">
+      <span style="font-size:0.82em;color:#888;">显示：</span>
+      <button onclick="renderMarketHistory('top8')" id="mh-btn-top8"
+        style="font-size:0.8em;padding:3px 10px;border-radius:12px;border:1px solid rgba(124,58,237,0.4);background:rgba(124,58,237,0.2);color:#a78bfa;cursor:pointer;">
+        Top 8 热门
+      </button>
+      <button onclick="renderMarketHistory('top16')" id="mh-btn-top16"
+        style="font-size:0.8em;padding:3px 10px;border-radius:12px;border:1px solid rgba(100,100,100,0.3);background:transparent;color:#888;cursor:pointer;">
+        Top 16
+      </button>
+      <button onclick="renderMarketHistory('all')" id="mh-btn-all"
+        style="font-size:0.8em;padding:3px 10px;border-radius:12px;border:1px solid rgba(100,100,100,0.3);background:transparent;color:#888;cursor:pointer;">
+        全部队伍
+      </button>
+    </div>
+    <div id="chart-market-history" style="height:360px;"></div>
   </div>
 
   <div class="card">
@@ -252,6 +278,182 @@
 
 <!-- ========== Tab: 小组赛 ========== -->
 <div id="tab-groups" class="tab-content">
+
+  <!-- ── 32强名单 ── -->
+  <div class="card full-width" style="margin-bottom:18px;">
+    <h2 style="margin-bottom:4px;">🏆 小组赛出线 32 强名单</h2>
+    <div class="subtitle" style="text-align:left;color:#888;font-size:0.85em;margin-bottom:14px;">
+      以 Sophia AI 赛前预测海报为基准（2026 FIFA World Cup 分组赛实际出线）
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 14px;">
+      <!-- Group A -->
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:8px;padding:8px 12px;">
+        <div style="font-size:0.75em;color:#a78bfa;font-weight:700;letter-spacing:1px;margin-bottom:6px;">GROUP A</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇲🇽 Mexico</span><span style="color:#4ade80;font-size:0.8em;">Winner</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇨🇦 Canada</span><span style="color:#60a5fa;font-size:0.8em;">Runner-up</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇧🇦 Bosnia-Herz.</span><span style="color:#f59e0b;font-size:0.8em;">Best 3rd</span></div>
+        </div>
+      </div>
+      <!-- Group B -->
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:8px;padding:8px 12px;">
+        <div style="font-size:0.75em;color:#a78bfa;font-weight:700;letter-spacing:1px;margin-bottom:6px;">GROUP B</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇨🇭 Switzerland</span><span style="color:#4ade80;font-size:0.8em;">Winner</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇺🇸 United States</span><span style="color:#60a5fa;font-size:0.8em;">Runner-up</span></div>
+        </div>
+      </div>
+      <!-- Group C -->
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:8px;padding:8px 12px;">
+        <div style="font-size:0.75em;color:#a78bfa;font-weight:700;letter-spacing:1px;margin-bottom:6px;">GROUP C</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇧🇷 Brazil</span><span style="color:#4ade80;font-size:0.8em;">Winner</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇿🇦 South Africa</span><span style="color:#60a5fa;font-size:0.8em;">Runner-up</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇵🇾 Paraguay</span><span style="color:#f59e0b;font-size:0.8em;">Best 3rd</span></div>
+        </div>
+      </div>
+      <!-- Group D -->
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:8px;padding:8px 12px;">
+        <div style="font-size:0.75em;color:#a78bfa;font-weight:700;letter-spacing:1px;margin-bottom:6px;">GROUP D</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇫🇷 France</span><span style="color:#4ade80;font-size:0.8em;">Winner</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇦🇺 Australia</span><span style="color:#60a5fa;font-size:0.8em;">Runner-up</span></div>
+        </div>
+      </div>
+      <!-- Group E -->
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:8px;padding:8px 12px;">
+        <div style="font-size:0.75em;color:#a78bfa;font-weight:700;letter-spacing:1px;margin-bottom:6px;">GROUP E</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇩🇪 Germany</span><span style="color:#4ade80;font-size:0.8em;">Winner</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇨🇮 Côte d'Ivoire</span><span style="color:#60a5fa;font-size:0.8em;">Runner-up</span></div>
+        </div>
+      </div>
+      <!-- Group F -->
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:8px;padding:8px 12px;">
+        <div style="font-size:0.75em;color:#a78bfa;font-weight:700;letter-spacing:1px;margin-bottom:6px;">GROUP F</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇳🇱 Netherlands</span><span style="color:#4ade80;font-size:0.8em;">Winner</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇸🇪 Sweden</span><span style="color:#60a5fa;font-size:0.8em;">Runner-up</span></div>
+        </div>
+      </div>
+      <!-- Group G -->
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:8px;padding:8px 12px;">
+        <div style="font-size:0.75em;color:#a78bfa;font-weight:700;letter-spacing:1px;margin-bottom:6px;">GROUP G</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇧🇪 Belgium</span><span style="color:#4ade80;font-size:0.8em;">Winner</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇸🇳 Senegal</span><span style="color:#60a5fa;font-size:0.8em;">Runner-up</span></div>
+        </div>
+      </div>
+      <!-- Group H -->
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:8px;padding:8px 12px;">
+        <div style="font-size:0.75em;color:#a78bfa;font-weight:700;letter-spacing:1px;margin-bottom:6px;">GROUP H</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇪🇸 Spain</span><span style="color:#4ade80;font-size:0.8em;">Winner</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇨🇴 Colombia</span><span style="color:#60a5fa;font-size:0.8em;">Runner-up</span></div>
+        </div>
+      </div>
+      <!-- Group I -->
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:8px;padding:8px 12px;">
+        <div style="font-size:0.75em;color:#a78bfa;font-weight:700;letter-spacing:1px;margin-bottom:6px;">GROUP I</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇫🇷 France</span><span style="color:#4ade80;font-size:0.8em;">Winner</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇳🇴 Norway</span><span style="color:#60a5fa;font-size:0.8em;">Runner-up</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇸🇳 Senegal</span><span style="color:#f59e0b;font-size:0.8em;">Best 3rd</span></div>
+        </div>
+      </div>
+      <!-- Group J -->
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:8px;padding:8px 12px;">
+        <div style="font-size:0.75em;color:#a78bfa;font-weight:700;letter-spacing:1px;margin-bottom:6px;">GROUP J</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇦🇷 Argentina</span><span style="color:#4ade80;font-size:0.8em;">Winner</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇩🇿 Algeria</span><span style="color:#60a5fa;font-size:0.8em;">Runner-up</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇦🇹 Austria</span><span style="color:#f59e0b;font-size:0.8em;">Best 3rd</span></div>
+        </div>
+      </div>
+      <!-- Group K -->
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:8px;padding:8px 12px;">
+        <div style="font-size:0.75em;color:#a78bfa;font-weight:700;letter-spacing:1px;margin-bottom:6px;">GROUP K</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇵🇹 Portugal</span><span style="color:#4ade80;font-size:0.8em;">Winner</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇨🇻 Cabo Verde</span><span style="color:#60a5fa;font-size:0.8em;">Runner-up</span></div>
+        </div>
+      </div>
+      <!-- Group L -->
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:8px;padding:8px 12px;">
+        <div style="font-size:0.75em;color:#a78bfa;font-weight:700;letter-spacing:1px;margin-bottom:6px;">GROUP L</div>
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🏴󠁧󠁢󠁥󠁮󠁧󠁿 England</span><span style="color:#4ade80;font-size:0.8em;">Winner</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.9em;"><span>🇭🇷 Croatia</span><span style="color:#60a5fa;font-size:0.8em;">Runner-up</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 竞品预测对比 ── -->
+  <div class="card full-width" style="margin-bottom:18px;">
+    <h2 style="margin-bottom:4px;">📊 赛前 32 强预测准确率对比</h2>
+    <div class="subtitle" style="text-align:left;color:#888;font-size:0.85em;margin-bottom:14px;">
+      以小组赛实际出线 32 强为基准，对比各家赛前公开预测报告命中情况
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:0.88em;">
+        <thead>
+          <tr style="background:rgba(124,58,237,0.15);color:#c4b5fd;">
+            <th style="padding:10px 12px;text-align:left;border-bottom:1px solid rgba(124,58,237,0.3);white-space:nowrap;">模型 / 素材</th>
+            <th style="padding:10px 12px;text-align:center;border-bottom:1px solid rgba(124,58,237,0.3);">命中</th>
+            <th style="padding:10px 12px;text-align:center;border-bottom:1px solid rgba(124,58,237,0.3);">总数</th>
+            <th style="padding:10px 12px;text-align:center;border-bottom:1px solid rgba(124,58,237,0.3);">准确率</th>
+            <th style="padding:10px 12px;text-align:left;border-bottom:1px solid rgba(124,58,237,0.3);">说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Reference -->
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.07);">
+            <td style="padding:10px 12px;font-weight:600;white-space:nowrap;">
+              <span style="display:inline-block;background:rgba(59,130,246,0.15);color:#60a5fa;border-radius:4px;padding:2px 7px;font-size:0.82em;margin-right:6px;">竞品</span>
+              参考报告
+            </td>
+            <td style="padding:10px 12px;text-align:center;font-size:1.1em;font-weight:700;color:#4ade80;">26</td>
+            <td style="padding:10px 12px;text-align:center;color:#888;">32</td>
+            <td style="padding:10px 12px;text-align:center;">
+              <span style="background:rgba(59,130,246,0.2);color:#60a5fa;border-radius:12px;padding:3px 10px;font-weight:700;">81.2%</span>
+            </td>
+            <td style="padding:10px 12px;color:#888;font-size:0.82em;">官方 224 页完整 PDF 报告</td>
+          </tr>
+          <!-- Sophia AI -->
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.07);background:rgba(124,58,237,0.06);">
+            <td style="padding:10px 12px;font-weight:600;white-space:nowrap;">
+              <span style="display:inline-block;background:rgba(124,58,237,0.25);color:#a78bfa;border-radius:4px;padding:2px 7px;font-size:0.82em;margin-right:6px;">⭐ 我方</span>
+              Sophia AI 出线预测海报
+            </td>
+            <td style="padding:10px 12px;text-align:center;font-size:1.1em;font-weight:700;color:#4ade80;">25</td>
+            <td style="padding:10px 12px;text-align:center;color:#888;">32</td>
+            <td style="padding:10px 12px;text-align:center;">
+              <span style="background:rgba(124,58,237,0.25);color:#a78bfa;border-radius:12px;padding:3px 10px;font-weight:700;">78.1%</span>
+            </td>
+            <td style="padding:10px 12px;color:#888;font-size:0.82em;">原生多智能体，附带小组出线概率可视化</td>
+          </tr>
+          <!-- 投资人竞品 -->
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.07);">
+            <td style="padding:10px 12px;font-weight:600;white-space:nowrap;">
+              <span style="display:inline-block;background:rgba(59,130,246,0.15);color:#60a5fa;border-radius:4px;padding:2px 7px;font-size:0.82em;margin-right:6px;">竞品</span>
+              投资人转发竞品（淘汰赛对阵图）
+            </td>
+            <td style="padding:10px 12px;text-align:center;font-size:1.1em;font-weight:700;color:#fbbf24;">24</td>
+            <td style="padding:10px 12px;text-align:center;color:#888;">32</td>
+            <td style="padding:10px 12px;text-align:center;">
+              <span style="background:rgba(251,191,36,0.15);color:#fbbf24;border-radius:12px;padding:3px 10px;font-weight:700;">75.0%</span>
+            </td>
+            <td style="padding:10px 12px;color:#888;font-size:0.82em;">行业投资人赛前流传的完整淘汰赛 bracket 推演图</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="margin-top:10px;font-size:0.8em;color:#666;line-height:1.5;">
+      * 基准：2026 FIFA World Cup 小组赛实际出线 32 强（含最佳第三名）。命中 = 预测名单与实际出线名单重叠队数。
+    </div>
+  </div>
+
   <div class="card full-width stage-trend-card" data-stage="groups">
     <h2 style="cursor:pointer;" onclick="toggleStageTrend('groups')">📉 小组第一概率走势 <span class="trend-toggle">▼</span></h2>
     <div class="stage-trend-body">
@@ -296,7 +498,21 @@
   </div>
   <div class="card full-width">
     <h2>🎯 1/16 决赛（16 场 · 32 队 → 16 队）</h2>
+    <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <span style="font-size:0.85em;color:#888;">视图：</span>
+      <button id="r32-view-bracket" class="r32-view-btn active"
+        style="font-size:0.85em;padding:5px 14px;border-radius:6px;border:1px solid rgba(255,215,0,0.4);background:rgba(255,215,0,0.15);color:#ffd700;cursor:pointer;"
+        onclick="switchR32View('bracket')">
+        对阵图
+      </button>
+      <button id="r32-view-schedule" class="r32-view-btn"
+        style="font-size:0.85em;padding:5px 14px;border-radius:6px;border:1px solid rgba(100,100,100,0.3);background:transparent;color:#888;cursor:pointer;"
+        onclick="switchR32View('schedule')">
+        📅 实际赛程安排
+      </button>
+    </div>
     <div id="r32-content" class="loading">加载中...</div>
+    <div id="r32-schedule-content" class="loading" style="display:none;">加载中...</div>
   </div>
 </div>
 
@@ -826,7 +1042,64 @@ async function renderGroupSchedule() {
       </div>`;
   }
 
+  // ===== 准确率动态计算（基于已结束场次） =====
+  const played = (d.matches || []).filter(m => m.status === 'played' && m.actual_result);
+  const nPlayed = played.length;
+
+  // 1. 1X2 方向胜率
+  const dirHits = played.filter(m => m.prediction_hit === true).length;
+  const dirPct = nPlayed ? (dirHits / nPlayed * 100).toFixed(1) : '0.0';
+
+  // 2. 推荐比分命中（实际比分落在 forecast_format 推荐的前几个比分中）
+  let scoreHits = 0;
+  played.forEach(m => {
+    const predRaw = m.prediction && m.prediction.forecast_format && m.prediction.forecast_format['预测比分'];
+    const actual = m.actual_result && m.actual_result.score_str;
+    if (!predRaw || !actual) return;
+    const predScores = (predRaw.match(/(\d+-\d+)\s*\(/g) || []).map(s => s.split('(')[0].trim());
+    if (predScores.includes(actual.trim())) scoreHits++;
+  });
+  const scorePct = nPlayed ? (scoreHits / nPlayed * 100).toFixed(1) : '0.0';
+
+  // 4. 大小球命中（lambda 总期望 >2.5 vs 实际总进球 >2.5）
+  let ouHits = 0, ouTotal = 0;
+  played.forEach(m => {
+    const p = m.prediction;
+    const ar = m.actual_result;
+    if (!p || !ar || !ar.score_str) return;
+    const expGoals = (p.lambda_a || 0) + (p.lambda_b || 0);
+    if (expGoals <= 0) return;
+    const [a, b] = ar.score_str.split('-').map(Number);
+    if (isNaN(a) || isNaN(b)) return;
+    const actualTotal = a + b;
+    const predOver = expGoals > 2.5;
+    const actualOver = actualTotal > 2.5;
+    if (predOver === actualOver) ouHits++;
+    ouTotal++;
+  });
+  const ouPct = ouTotal ? (ouHits / ouTotal * 100).toFixed(1) : '0.0';
+
+  const accuracyCards = nPlayed > 0 ? `
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+    <div style="background:rgba(74,222,128,0.1);padding:12px;border-radius:8px;text-align:center;border:1px solid rgba(74,222,128,0.3);">
+      <div style="font-size:0.85em;color:#aaa;">1X2 方向胜率</div>
+      <div style="font-size:1.6em;color:#4ade80;font-weight:bold;">${dirPct}%</div>
+      <div style="font-size:0.75em;color:#888;">${dirHits}/${nPlayed} 场</div>
+    </div>
+    <div style="background:rgba(251,191,36,0.1);padding:12px;border-radius:8px;text-align:center;border:1px solid rgba(251,191,36,0.3);">
+      <div style="font-size:0.85em;color:#aaa;">推荐比分命中</div>
+      <div style="font-size:1.6em;color:#fbbf24;font-weight:bold;">${scorePct}%</div>
+      <div style="font-size:0.75em;color:#888;">${scoreHits}/${nPlayed} 场</div>
+    </div>
+    <div style="background:rgba(96,165,250,0.1);padding:12px;border-radius:8px;text-align:center;border:1px solid rgba(96,165,250,0.3);">
+      <div style="font-size:0.85em;color:#aaa;">大小球命中</div>
+      <div style="font-size:1.6em;color:#60a5fa;font-weight:bold;">${ouPct}%</div>
+      <div style="font-size:0.75em;color:#888;">${ouHits}/${ouTotal} 场</div>
+    </div>
+  </div>` : '';
+
   let html = `<div style="margin-bottom:10px;">${tabChannelSwitcherHTML('group_schedule', '通道')}</div>`;
+  html += accuracyCards;
   html += `<div style="background:rgba(74,222,128,0.08);padding:12px;border-radius:8px;margin-bottom:20px;">
     <strong style="color:#4ade80">${d.n_played}</strong> 场已结束 ·
     <strong style="color:#fbbf24">${d.n_scheduled}</strong> 场待赛 ·
@@ -1265,7 +1538,111 @@ async function renderR32() {
   const switcher = `<div style="margin-bottom:10px;">${tabChannelSwitcherHTML('r32', '通道')}</div>`;
   const subtitle = `<p style="color:#aaa">32 队 = ${d.n_teams}，16 场对阵${methodBadge(d.method)}</p>`;
   document.getElementById('r32-content').innerHTML = switcher + subtitle + knockoutTable(d.matches, 'match_id');
+  // 同时渲染「实际赛程安排」子视图（仅 1/16 决赛）：直接读 ESPN 实际赛果
+  await renderR32Schedule();
   _syncChannelButtons();
+}
+
+async function renderR32Schedule() {
+  const container = document.getElementById('r32-schedule-content');
+  if (!container) return;
+  container.innerHTML = '<div class="loading">加载实际赛果...</div>';
+
+  let actualData;
+  try {
+    actualData = await fetchJSON('/api/knockout_actual');
+  } catch (e) {
+    actualData = { matches: [] };
+  }
+
+  // 1/16 决赛日期范围（按 bracket.json）
+  const r32Start = '2026-06-28';
+  const r32End = '2026-07-03';
+  const matches = (actualData.matches || []).filter(m => m.date >= r32Start && m.date <= r32End);
+  matches.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  if (matches.length === 0) {
+    container.innerHTML = '<div class="subtitle">暂无 1/16 决赛实际赛果</div>';
+    return;
+  }
+
+  // 并行获取预测
+  const previewPromises = matches.map(async m => {
+    if (!m.team_a || !m.team_b) return null;
+    try {
+      const p = await fetchJSON(`/api/match?a=${encodeURIComponent(m.team_a)}&b=${encodeURIComponent(m.team_b)}&with_llm=0`);
+      return (p && !p.error) ? p : null;
+    } catch (e) {
+      return null;
+    }
+  });
+  const previews = await Promise.all(previewPromises);
+
+  const rows = matches.map((m, idx) => {
+    const preview = (previews[idx] && previews[idx].prediction) || {};
+    const predWinner = preview.predicted_winner || '—';
+    const conf = preview.winner_confidence_pct || '';
+    const confStr = conf ? `<span style="color:#888">(${conf.toFixed ? conf.toFixed(1) : conf}%)</span>` : '';
+    const topScores = preview.top_scorelines || [];
+    const predScore = topScores.slice(0, 2).map(s => s.score).join(' / ') || '—';
+    const actual = m;
+    let resultHtml = '<span style="color:#888">—</span>';
+    let hitBadge = '';
+    if (actual && actual.score) {
+      const hit = predWinner === actual.winner;
+      const hitColor = hit ? '#4ade80' : '#ef4444';
+      const hitText = hit ? '✓ 预测命中' : '✗ 预测未命中';
+      resultHtml = `<span style="color:#ffd700;font-weight:bold">${actual.score}</span>`;
+      hitBadge = `<span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:12px;background:${hitColor}22;color:${hitColor};font-size:0.8em;font-weight:bold">${hitText}</span>`;
+    }
+    return `
+      <tr>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap">${m.date || '—'}</td>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);font-weight:bold">${m.team_a || 'TBD'}</td>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);color:#aaa">vs</td>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);font-weight:bold">${m.team_b || 'TBD'}</td>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);">
+          <div>预测胜者: <span style="color:#a78bfa">${predWinner}</span> ${confStr}</div>
+          <div style="color:#888;font-size:0.85em">推荐比分: ${predScore}</div>
+        </td>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap">${resultHtml} ${hitBadge}</td>
+      </tr>
+    `;
+  }).join('');
+  container.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:0.95em">
+      <thead>
+        <tr style="background:rgba(167,139,250,0.1)">
+          <th style="padding:12px;text-align:left">日期</th>
+          <th style="padding:12px;text-align:left">主队</th>
+          <th style="padding:12px"></th>
+          <th style="padding:12px;text-align:left">客队</th>
+          <th style="padding:12px;text-align:left">预测信息</th>
+          <th style="padding:12px;text-align:left">实际结果</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function switchR32View(view) {
+  const bracketBtn = document.getElementById('r32-view-bracket');
+  const scheduleBtn = document.getElementById('r32-view-schedule');
+  const bracketDiv = document.getElementById('r32-content');
+  const scheduleDiv = document.getElementById('r32-schedule-content');
+  if (!bracketBtn || !scheduleBtn || !bracketDiv || !scheduleDiv) return;
+  if (view === 'schedule') {
+    bracketDiv.style.display = 'none';
+    scheduleDiv.style.display = 'block';
+    bracketBtn.style.background = 'transparent'; bracketBtn.style.color = '#888'; bracketBtn.classList.remove('active');
+    scheduleBtn.style.background = 'rgba(255,215,0,0.15)'; scheduleBtn.style.color = '#ffd700'; scheduleBtn.classList.add('active');
+  } else {
+    bracketDiv.style.display = 'block';
+    scheduleDiv.style.display = 'none';
+    scheduleBtn.style.background = 'transparent'; scheduleBtn.style.color = '#888'; scheduleBtn.classList.remove('active');
+    bracketBtn.style.background = 'rgba(255,215,0,0.15)'; bracketBtn.style.color = '#ffd700'; bracketBtn.classList.add('active');
+  }
 }
 
 async function renderRound(tabId, apiPath, contentId, matchIdField) {
@@ -1619,6 +1996,8 @@ async function renderChampion(channel) {
     ch = getTabChannel('champion');
   }
   _championChannel = ch;
+  // ai_confed 无冠军级 synth 文件（偏移仅作用于单场 _quick_match_preview → 对阵/赛程 tab）
+  // 故冠军榜在 ai_confed 下回退 base synthesizer（与数据流双口径设计一致）
   const apiName = (ch === 'ai_phase3') ? '/api/synthesizer_ai_phase3' : '/api/synthesizer';
   const hint = document.getElementById('champion-channel-hint');
   // 渲染本地通道开关到 hint 区域旁
@@ -1629,9 +2008,13 @@ async function renderChampion(channel) {
   let data;
   try {
     data = await fetchJSON(apiName);
-    if (hint) hint.textContent = (ch === 'ai_phase3')
-      ? '— AI 加权通道：逐场 ΔE 注入 + 分段 ELO_PER_PP'
-      : '— Base 通道：纯 MC + 8 项 AI 修正（默认）';
+    if (ch === 'ai_phase3') {
+      if (hint) hint.textContent = '— AI 加权通道：逐场 ΔE 注入 + 分段 ELO_PER_PP';
+    } else if (ch === 'ai_confed') {
+      if (hint) hint.textContent = '— Confed 通道：洲际校正仅作用于对阵/赛程/淘汰赛 tab，冠军榜沿用 Base';
+    } else {
+      if (hint) hint.textContent = '— Base 通道：纯 MC + 8 项 AI 修正（默认）';
+    }
   } catch (e) {
     // AI 通道未生成时回退 base
     if (ch === 'ai_phase3') {
@@ -1682,6 +2065,105 @@ async function renderChampion(channel) {
         itemStyle: { color: '#3b82f6' }, barWidth: '40%'
       }
     ]
+  });
+}
+
+// === 市场夺冠概率历史折线图 ===
+let _marketHistoryData = null;  // 缓存，避免重复请求
+
+async function renderMarketHistory(mode) {
+  mode = mode || 'top8';
+
+  // 更新按钮高亮
+  ['top8','top16','all'].forEach(m => {
+    const btn = document.getElementById('mh-btn-' + m);
+    if (!btn) return;
+    const active = m === mode;
+    btn.style.background  = active ? 'rgba(124,58,237,0.2)' : 'transparent';
+    btn.style.color        = active ? '#a78bfa' : '#888';
+    btn.style.borderColor  = active ? 'rgba(124,58,237,0.4)' : 'rgba(100,100,100,0.3)';
+  });
+
+  // 首次加载时拉数据
+  if (!_marketHistoryData) {
+    try {
+      _marketHistoryData = await fetchJSON('/api/market_history');
+    } catch(e) {
+      console.error('market_history 加载失败', e);
+      return;
+    }
+  }
+
+  const { dates, teams } = _marketHistoryData;
+  if (!dates || !dates.length) return;
+
+  // 按最新一天概率排序，决定显示哪些队
+  const latest = dates.length - 1;
+  let teamList = Object.entries(teams)
+    .map(([name, vals]) => ({ name, latest: vals[latest] || 0, vals }))
+    .sort((a, b) => b.latest - a.latest);
+
+  if (mode === 'top8')  teamList = teamList.slice(0, 8);
+  if (mode === 'top16') teamList = teamList.slice(0, 16);
+
+  // 颜色池
+  const colors = [
+    '#a78bfa','#60a5fa','#4ade80','#fbbf24','#f87171',
+    '#34d399','#e879f9','#fb923c','#38bdf8','#a3e635',
+    '#f472b6','#2dd4bf','#818cf8','#facc15','#86efac','#67e8f9'
+  ];
+
+  const series = teamList.map((t, i) => ({
+    name: window.zh ? zh(t.name) : t.name,
+    type: 'line',
+    smooth: true,
+    data: t.vals,
+    lineStyle: { width: t.latest >= 5 ? 2.5 : 1.5 },
+    symbol: 'circle', symbolSize: 4,
+    itemStyle: { color: colors[i % colors.length] },
+    connectNulls: true,
+  }));
+
+  // x 轴日期格式化：mm/dd
+  const xLabels = dates.map(d => d.slice(5));  // "06-12"
+
+  const el = document.getElementById('chart-market-history');
+  if (!el) return;
+  const chart = echarts.getInstanceByDom(el) || echarts.init(el, 'dark');
+  chart.setOption({
+    backgroundColor: 'transparent',
+    tooltip: {
+      trigger: 'axis',
+      formatter(params) {
+        const date = dates[params[0].dataIndex] || '';
+        let s = `<b>${date}</b><br/>`;
+        params
+          .filter(p => p.value != null)
+          .sort((a, b) => b.value - a.value)
+          .forEach(p => {
+            s += `<span style="color:${p.color}">●</span> ${p.seriesName}: <b>${p.value}%</b><br/>`;
+          });
+        return s;
+      }
+    },
+    legend: {
+      data: series.map(s => s.name),
+      textStyle: { color: '#ccc', fontSize: 11 },
+      top: 0, type: 'scroll',
+    },
+    grid: { left: '3%', right: '2%', bottom: '4%', top: '40px', containLabel: true },
+    xAxis: {
+      type: 'category', data: xLabels,
+      axisLabel: { color: '#aaa', fontSize: 11 },
+      axisLine: { lineStyle: { color: '#444' } },
+    },
+    yAxis: {
+      type: 'value', name: '市场概率 %',
+      nameTextStyle: { color: '#888' },
+      axisLabel: { color: '#aaa', formatter: v => v + '%' },
+      splitLine: { lineStyle: { color: '#333' } },
+    },
+    series,
   });
 }
 
@@ -1777,6 +2259,109 @@ async function renderFinals() {
       }
     ]
   });
+}
+
+// === 3.4 淘汰赛实际赛程安排 ===
+// 注：此 tab 直接展示 ESPN 抓取的已完赛/即将开赛真实对阵，不依赖预测 bracket 的 match_id。
+// 预测信息通过 /api/match 按真实队名单独获取。
+async function renderKnockoutSchedule(channel) {
+  const container = document.getElementById('knockout-schedule-content');
+  container.innerHTML = '<div class="loading">加载淘汰赛赛程中...</div>';
+
+  const ch = channel || getGlobalChannel();
+
+  let actualData;
+  try {
+    actualData = await fetchJSON('/api/knockout_actual');
+  } catch (e) {
+    actualData = { matches: [] };
+  }
+  let allMatches = (actualData.matches || []).map((m, idx) => ({
+    stage: '🏆 淘汰赛',
+    stageKey: 'knockout',
+    match_id: `actual-${idx}`,
+    date: m.date || '',
+    venue: '',
+    team_a: m.team_a,
+    team_b: m.team_b,
+    actual_result: { score: m.score, winner: m.winner },
+    preview: null,
+    prediction_hit: null,
+  }));
+
+  // 按日期排序
+  allMatches.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  if (allMatches.length === 0) {
+    container.innerHTML = '<div class="subtitle">暂无淘汰赛实际赛程数据</div>';
+    return;
+  }
+
+  // 并行获取每场的模型预测（用于计算命中）
+  const previewPromises = allMatches.map(async m => {
+    if (!m.team_a || !m.team_b) return null;
+    try {
+      const p = await fetchJSON(`/api/match?a=${encodeURIComponent(m.team_a)}&b=${encodeURIComponent(m.team_b)}&with_llm=0`);
+      return (p && !p.error) ? p : null;
+    } catch (e) {
+      return null;
+    }
+  });
+  const previews = await Promise.all(previewPromises);
+
+  const rows = allMatches.map((m, idx) => {
+    const preview = (previews[idx] && previews[idx].prediction) || m.preview || {};
+    const predWinner = preview.predicted_winner || '—';
+    const conf = preview.winner_confidence_pct || '';
+    const confStr = conf ? `<span style="color:#888">(${conf.toFixed ? conf.toFixed(1) : conf}%)</span>` : '';
+    const topScores = preview.top_scorelines || [];
+    const predScore = topScores.slice(0, 2).map(s => s.score).join(' / ') || '—';
+
+    const actual = m.actual_result;
+    let resultHtml = '<span style="color:#888">—</span>';
+    let hitBadge = '';
+    if (actual && actual.score) {
+      const hit = predWinner === actual.winner;
+      const hitColor = hit ? '#4ade80' : '#ef4444';
+      const hitText = hit ? '✓ 预测命中' : '✗ 预测未命中';
+      resultHtml = `<span style="color:#ffd700;font-weight:bold">${actual.score}</span>`;
+      hitBadge = `<span style="display:inline-block;margin-left:8px;padding:2px 8px;border-radius:12px;background:${hitColor}22;color:${hitColor};font-size:0.8em;font-weight:bold">${hitText}</span>`;
+    }
+
+    return `
+      <tr>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap">${m.stage}</td>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap">${m.date || '—'}</td>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);font-weight:bold">${m.team_a || 'TBD'}</td>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);color:#aaa">vs</td>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);font-weight:bold">${m.team_b || 'TBD'}</td>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);">
+          <div>预测胜者: <span style="color:#a78bfa">${predWinner}</span> ${confStr}</div>
+          <div style="color:#888;font-size:0.85em">推荐比分: ${predScore}</div>
+        </td>
+        <td style="padding:12px;border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap">
+          ${resultHtml} ${hitBadge}
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  container.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:0.95em">
+      <thead>
+        <tr style="background:rgba(167,139,250,0.1)">
+          <th style="padding:12px;text-align:left">阶段</th>
+          <th style="padding:12px;text-align:left">日期</th>
+          <th style="padding:12px;text-align:left">主队</th>
+          <th style="padding:12px"></th>
+          <th style="padding:12px;text-align:left">客队</th>
+          <th style="padding:12px;text-align:left">预测信息</th>
+          <th style="padding:12px;text-align:left">实际结果</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
 }
 
 // === 3.5 调度仪表盘 ===
@@ -2564,6 +3149,8 @@ async function renderHeatmap() {
 // 兼容：旧函数 withChannel(url) / _globalChannel 保留，仅作"全局默认"。
 const CHANNEL_STORAGE_KEY = 'wc_global_channel';      // 全局默认
 const TAB_CHANNEL_PREFIX  = 'wc_tab_channel:';        // 每 tab 独立
+const VALID_CHANNELS = ['base', 'ai_phase3', 'ai_confed'];
+const NON_BASE_CHANNELS = ['ai_phase3', 'ai_confed'];  // 需要拼 ?channel= 的通道
 
 // tab 名 → 重新渲染函数（部分函数下方才定义，调用前会做 typeof 检查）
 function _tabRenderMap() {
@@ -2583,7 +3170,7 @@ function _tabRenderMap() {
 function getGlobalChannel() {
   try {
     const v = localStorage.getItem(CHANNEL_STORAGE_KEY);
-    return (v === 'ai_phase3') ? 'ai_phase3' : 'base';
+    return VALID_CHANNELS.includes(v) ? v : 'base';
   } catch (e) { return 'base'; }
 }
 function setGlobalChannel(ch) {
@@ -2597,7 +3184,7 @@ function setGlobalChannel(ch) {
 function getTabChannel(tabId) {
   try {
     const v = localStorage.getItem(TAB_CHANNEL_PREFIX + tabId);
-    if (v === 'ai_phase3' || v === 'base') return v;
+    if (VALID_CHANNELS.includes(v)) return v;
   } catch (e) {}
   // 没有独立设置 → 跟随全局
   return _globalChannel;
@@ -2609,12 +3196,12 @@ function setTabChannel(tabId, ch) {
 // URL 拼装：优先读 tab，失败回退全局
 function withChannelFor(tabId, url) {
   const ch = getTabChannel(tabId);
-  if (ch !== 'ai_phase3') return url;
-  return url + (url.includes('?') ? '&' : '?') + 'channel=ai_phase3';
+  if (!NON_BASE_CHANNELS.includes(ch)) return url;
+  return url + (url.includes('?') ? '&' : '?') + 'channel=' + ch;
 }
-// 老接口：保留兼容（仅看全局，不再用于双通道 tab 内部）
+// 老接口：保留兼容（仅看全局，不再用于多通道 tab 内部）
 function channelQS() {
-  return (_globalChannel === 'ai_phase3') ? 'channel=ai_phase3' : '';
+  return NON_BASE_CHANNELS.includes(_globalChannel) ? ('channel=' + _globalChannel) : '';
 }
 function withChannel(url) {
   const qs = channelQS();
@@ -2625,18 +3212,28 @@ function withChannel(url) {
 let _globalChannel = getGlobalChannel();
 
 // === 视觉同步：全局开关 + 各 tab 独立开关 ===
+// 每个通道有独立配色：base 金 / ai_phase3 绿 / ai_confed 青
+const CH_PALETTE = {
+  base:      { bg: 'rgba(255,215,0,0.15)',   fg: '#ffd700', border: '1px solid rgba(255,215,0,0.4)' },
+  ai_phase3: { bg: 'rgba(74,222,128,0.15)',  fg: '#4ade80', border: '1px solid rgba(74,222,128,0.4)' },
+  ai_confed: { bg: 'rgba(34,211,238,0.15)',  fg: '#22d3ee', border: '1px solid rgba(34,211,238,0.4)' },
+};
+function _styleChBtn(b, active) {
+  if (active) {
+    b.style.background = '#ffd700'; b.style.color = '#1a1a2e';
+    b.style.fontWeight = 'bold'; b.style.border = 'none';
+  } else {
+    const p = CH_PALETTE[b.getAttribute('data-ch')] || CH_PALETTE.ai_phase3;
+    b.style.background = p.bg; b.style.color = p.fg;
+    b.style.fontWeight = 'normal'; b.style.border = p.border;
+  }
+}
 function _syncChannelButtons() {
   // 全局
   document.querySelectorAll('#global-channel-toggle .ch-btn').forEach(b => {
     const active = (b.getAttribute('data-ch') === _globalChannel);
     b.classList.toggle('active', active);
-    if (active) {
-      b.style.background = '#ffd700'; b.style.color = '#1a1a2e';
-      b.style.fontWeight = 'bold'; b.style.border = 'none';
-    } else {
-      b.style.background = 'rgba(74,222,128,0.15)'; b.style.color = '#4ade80';
-      b.style.fontWeight = 'normal'; b.style.border = '1px solid rgba(74,222,128,0.4)';
-    }
+    _styleChBtn(b, active);
   });
   // 各 tab
   document.querySelectorAll('.tab-channel-toggle').forEach(grp => {
@@ -2646,13 +3243,7 @@ function _syncChannelButtons() {
     grp.querySelectorAll('.ch-btn').forEach(b => {
       const active = (b.getAttribute('data-ch') === cur);
       b.classList.toggle('active', active);
-      if (active) {
-        b.style.background = '#ffd700'; b.style.color = '#1a1a2e';
-        b.style.fontWeight = 'bold'; b.style.border = 'none';
-      } else {
-        b.style.background = 'rgba(74,222,128,0.15)'; b.style.color = '#4ade80';
-        b.style.fontWeight = 'normal'; b.style.border = '1px solid rgba(74,222,128,0.4)';
-      }
+      _styleChBtn(b, active);
     });
   });
 }
@@ -2669,6 +3260,9 @@ function tabChannelSwitcherHTML(tabId, label) {
     <button class="ch-btn" data-ch="ai_phase3"
       style="background:rgba(74,222,128,0.15);color:#4ade80;border:1px solid rgba(74,222,128,0.4);padding:3px 10px;border-radius:4px;cursor:pointer;font-size:0.95em;"
       title="AI 加权 MC（逐场 ΔE 注入 + 分段 ELO_PER_PP）">AI</button>
+    <button class="ch-btn" data-ch="ai_confed"
+      style="background:rgba(34,211,238,0.15);color:#22d3ee;border:1px solid rgba(34,211,238,0.4);padding:3px 10px;border-radius:4px;cursor:pointer;font-size:0.95em;"
+      title="洲际强度校正（跨洲 WC 历史反推每洲 ELO 偏移）">Confed</button>
   </span>`;
 }
 
@@ -2730,6 +3324,7 @@ _syncChannelButtons();
 // 启动
 Promise.all([
   renderChampion(),
+  renderMarketHistory('top8'),
   renderScenarios(),
   renderFinals(),
   renderSchedulerDashboard(),

@@ -39,13 +39,92 @@ def _load_bracket():
     return json.load(open(DATA_RAW / "bracket.json"))
 
 
+def _load_knockout_results() -> Dict[str, Any]:
+    """加载淘汰赛实际结果（若文件不存在则返回空）。"""
+    path = DATA_OUTPUTS / "knockout_results.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.load(open(path, encoding="utf-8"))
+        return data.get("results", {})
+    except Exception:
+        return {}
+
+
+def _load_actual_group_standings() -> Dict[str, Dict[str, str]]:
+    """
+    根据 data/outputs/group_results.json 计算实际小组排名。
+    返回 {group: {"winner": ..., "runner_up": ..., "third": ..., "fourth": ...}}
+    只返回已经赛完 3 场（即 4 队各踢 3 场）的小组；否则该组不存在。
+    """
+    try:
+        groups_data = _load_groups()
+        results_data = json.load(open(DATA_OUTPUTS / "group_results.json", encoding="utf-8"))
+        results = results_data.get("results", {})
+    except Exception:
+        return {}
+
+    out = {}
+    for group, teams in groups_data.get("groups", {}).items():
+        if len(teams) != 4:
+            continue
+        stats = {t: {"pts": 0, "gf": 0, "ga": 0, "played": 0, "w": 0, "d": 0, "l": 0} for t in teams}
+        for r in results.values():
+            ta, tb = r.get("team_a"), r.get("team_b")
+            if ta not in stats or tb not in stats:
+                continue
+            sa, sb = r.get("score_a", 0), r.get("score_b", 0)
+            try:
+                sa, sb = int(sa), int(sb)
+            except Exception:
+                continue
+            stats[ta]["played"] += 1
+            stats[tb]["played"] += 1
+            stats[ta]["gf"] += sa
+            stats[ta]["ga"] += sb
+            stats[tb]["gf"] += sb
+            stats[tb]["ga"] += sa
+            if sa > sb:
+                stats[ta]["pts"] += 3
+                stats[ta]["w"] += 1
+                stats[tb]["l"] += 1
+            elif sa < sb:
+                stats[tb]["pts"] += 3
+                stats[tb]["w"] += 1
+                stats[ta]["l"] += 1
+            else:
+                stats[ta]["pts"] += 1
+                stats[ta]["d"] += 1
+                stats[tb]["pts"] += 1
+                stats[tb]["d"] += 1
+
+        # 只接受踢满 3 场的小组（4 队 * 3 场 / 2 = 6 场）
+        total_played = sum(s["played"] for s in stats.values())
+        if total_played < 6:
+            continue
+
+        ranked = sorted(
+            stats.items(),
+            key=lambda x: (-x[1]["pts"], -(x[1]["gf"] - x[1]["ga"]), -x[1]["gf"]),
+        )
+        out[group] = {
+            "winner": ranked[0][0],
+            "runner_up": ranked[1][0],
+            "third": ranked[2][0],
+            "fourth": ranked[3][0],
+        }
+    return out
+
+
 def _resolve_channel(channel: Optional[str]) -> str:
     """
-    标准化 channel 参数。base / ai_phase3 双通道支持。
+    标准化 channel 参数。base / ai_phase3 / ai_confed 三通道支持。
     无效值或 None 都退回 base，保证兼容老调用。
     """
     if channel == "ai_phase3":
         return "ai_phase3"
+    if channel == "ai_confed":
+        return "ai_confed"
     return "base"
 
 
@@ -383,10 +462,38 @@ def api_groups(channel: Optional[str] = None) -> Dict[str, Any]:
             "predicted_3rd": teams_in_g[2]["team"] if len(teams_in_g) > 2 else None,
         }
 
+    # ── 实际赛果覆盖：若小组赛已全部结束，用真实排名覆盖预测出线 ──
+    actual_standings = _load_actual_group_standings()
+    method_suffix = ""
+    for g, actual in actual_standings.items():
+        if g not in out_groups:
+            continue
+        out_groups[g]["actual_winner"] = actual["winner"]
+        out_groups[g]["actual_runner_up"] = actual["runner_up"]
+        out_groups[g]["actual_3rd"] = actual["third"]
+        out_groups[g]["actual_4th"] = actual["fourth"]
+        # 用实际名次覆盖预测出线字段，使后续 r32/r16 等淘汰赛推演基于真实对阵
+        out_groups[g]["predicted_winner"] = actual["winner"]
+        out_groups[g]["predicted_runner_up"] = actual["runner_up"]
+        out_groups[g]["predicted_3rd"] = actual["third"]
+        # 同时把 teams 列表按实际排名重排，并标记 actual_rank
+        team_map = {t["team"]: t for t in out_groups[g]["teams"]}
+        reordered = []
+        for rank, team_name in enumerate([actual["winner"], actual["runner_up"], actual["third"], actual["fourth"]], 1):
+            if team_name in team_map:
+                team_map[team_name]["actual_rank"] = rank
+                reordered.append(team_map[team_name])
+        # 补回可能出现的缺失队（保险）
+        for t in out_groups[g]["teams"]:
+            if t["team"] not in {actual["winner"], actual["runner_up"], actual["third"], actual["fourth"]}:
+                reordered.append(t)
+        out_groups[g]["teams"] = reordered
+        method_suffix = " + 实际赛果覆盖"
+
     return {
         "n_groups": len(out_groups),
         "groups": out_groups,
-        "method": "MC 100k 小组第 1 名概率排序" if rank_dist else "按 Elo 排序",
+        "method": ("MC 100k 小组第 1 名概率排序" if rank_dist else "按 Elo 排序") + method_suffix,
     }
 
 
@@ -450,11 +557,18 @@ def api_r32(channel: Optional[str] = None) -> Dict[str, Any]:
                 return g_runners.get(g)
         return None
 
+    # 若小组赛实际排名已全部出炉，不再使用 MC「最可能剧本」覆盖 slot，
+    # 保证淘汰赛对阵基于真实出线结果。
+    actual_standings = _load_actual_group_standings()
+    all_groups = _load_groups().get("groups", {})
+    use_actual_bracket = len(actual_standings) == len(all_groups) and len(actual_standings) > 0
+
     r32_matches = []
     for m in bracket.get("round_of_32", []):
         mid = m["match"]
-        # 方案 B 优先：用 MC 最可能对阵覆盖 slot 解析结果
-        ml_entry = _ml_lookup("r32", mid, channel=channel)
+        # 方案 B 优先：用 MC 最可能剧本覆盖 slot 解析结果
+        # 但当实际小组赛已全部结束，强制使用真实 slot 解析，避免预测对阵覆盖真实对阵
+        ml_entry = None if use_actual_bracket else _ml_lookup("r32", mid, channel=channel)
         if ml_entry:
             ta, tb = ml_entry["team_a"], ml_entry["team_b"]
         else:
@@ -475,15 +589,25 @@ def api_r32(channel: Optional[str] = None) -> Dict[str, Any]:
             match_info["preview"] = _quick_match_preview(ta, tb, channel=channel)
         # 关键节点 5-Agent 微调（若有）
         _apply_critical_adjustment(match_info, "r32", mid)
+        # 附加淘汰赛实际结果与预测命中标记
+        kr = _load_knockout_results()
+        actual = kr.get(str(mid))
+        if actual:
+            match_info["actual_result"] = actual
+            pred_winner = (match_info.get("preview") or {}).get("predicted_winner")
+            match_info["prediction_hit"] = (pred_winner == actual.get("winner"))
         r32_matches.append(match_info)
 
+    method = "小组赛实际出线 → slot 解析" if use_actual_bracket else (
+        "MC 最可能剧本（方案 B/" + _resolve_channel(channel) + "）"
+        if _load_most_likely(channel) else "小组赛预测出线 → slot 解析"
+    )
     return {
         "n_teams": len(r32_teams),
         "teams": r32_teams,
         "n_matches": len(r32_matches),
         "matches": r32_matches,
-        "method": ("MC 最可能剧本（方案 B/" + _resolve_channel(channel) + "）"
-                   if _load_most_likely(channel) else "小组赛预测出线 → slot 解析"),
+        "method": method,
     }
 
 
@@ -621,6 +745,13 @@ def _build_round_from_most_likely(round_name: str, bracket_pairings: List[Dict],
             m["preview"] = _quick_match_preview(ta, tb, channel=channel)
         # 关键节点 5-Agent 微调（若有）
         _apply_critical_adjustment(m, round_name, mid)
+        # 附加淘汰赛实际结果与预测命中标记
+        kr = _load_knockout_results()
+        actual = kr.get(str(mid))
+        if actual:
+            m["actual_result"] = actual
+            pred_winner = (m.get("preview") or {}).get("predicted_winner")
+            m["prediction_hit"] = (pred_winner == actual.get("winner"))
         matches.append(m)
     return matches
 
@@ -769,6 +900,13 @@ def api_final_match(channel: Optional[str] = None) -> Dict[str, Any]:
         final["preview"] = _quick_match_preview(ta, tb, channel=channel)
         # 关键节点 5-Agent 微调（若有）
         _apply_critical_adjustment(final, "final", 1)
+        # 附加决赛实际结果与预测命中标记
+        kr = _load_knockout_results()
+        actual = kr.get(str(final.get("match_id", 1)))
+        if actual:
+            final["actual_result"] = actual
+            pred_winner = (final.get("preview") or {}).get("predicted_winner")
+            final["prediction_hit"] = (pred_winner == actual.get("winner"))
         # 预测冠军：方案 B 优先用 MC 频次最高胜方，否则用贪心
         if ml_final:
             final["predicted_champion"] = ml_final["winner"]
@@ -1048,6 +1186,24 @@ def _quick_match_preview(team_a: str, team_b: str,
     
     ta_adj["elo"] += home_boost_a
     tb_adj["elo"] += home_boost_b
+
+    # ===== ai_confed 通道：confederation 强度偏移注入 =====
+    # 解决"模型 vs 市场分化"根因之一：ELO 把不同大洲刷分等价对待，
+    # 但跨洲 WC 历史证明 AFC/CONCACAF/CAF 系统性低于 ELO 预期（USA/Australia 类）。
+    # 验证：code/backtest/validate_divergence_signals.py（跨洲 RPS −0.0063，cap ±80）
+    # 仅在 ai_confed 通道生效；base / ai_phase3 完全不受影响。
+    # 任何失败吞掉 → 退化为无偏移，不破坏主预测流程。
+    confed_off_a = 0.0
+    confed_off_b = 0.0
+    if _resolve_channel(channel) == "ai_confed":
+        try:
+            from models.confed_strength import get_team_confed_offset
+            confed_off_a = get_team_confed_offset(team_a)
+            confed_off_b = get_team_confed_offset(team_b)
+            ta_adj["elo"] += confed_off_a
+            tb_adj["elo"] += confed_off_b
+        except Exception:
+            pass
 
     elo_p = match_probabilities(ta_adj["elo"], tb_adj["elo"])
     poi = pm(ta_adj, tb_adj)

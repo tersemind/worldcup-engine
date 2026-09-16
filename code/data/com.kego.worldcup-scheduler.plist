@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  WorldCup Scheduler - macOS LaunchAgent
+  =======================================
+  断点续跑核心：
+    - RunAtLoad=true：登录/开机就启动
+    - KeepAlive=true：进程意外退出自动重启
+    - 弹性启动器内部会等网络就绪再 exec scheduler.py
+    - bootstrap=default：每次冷启动都做一次全量刷新，补上停机期间的数据缺口
+
+  安装：
+    cp code/data/com.kego.worldcup-scheduler.plist ~/Library/LaunchAgents/
+    launchctl unload ~/Library/LaunchAgents/com.kego.worldcup-scheduler.plist 2>/dev/null
+    launchctl load -w ~/Library/LaunchAgents/com.kego.worldcup-scheduler.plist
+    launchctl list | grep worldcup
+
+  停止 + 卸载（关闭自启）：
+    launchctl unload -w ~/Library/LaunchAgents/com.kego.worldcup-scheduler.plist
+
+  查看日志：
+    tail -f /Users/kego/project/worldcup-engine/data/scheduler.daemon.log
+    tail -f /Users/kego/project/worldcup-engine/data/scheduler.resilient.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.kego.worldcup-scheduler</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>-u</string>
+    <string>/Users/kego/project/worldcup-engine/code/data/scheduler_resilient_start.py</string>
+    <string>--bootstrap=default</string>
+    <string>--tick=60</string>
+    <string>--max-wait-net=300</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/kego/project/worldcup-engine</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+    <key>NetworkState</key>
+    <true/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>/Users/kego/project/worldcup-engine/data/scheduler.daemon.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/kego/project/worldcup-engine/data/scheduler.daemon.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>Nice</key>
+  <integer>5</integer>
+</dict>
+</plist>

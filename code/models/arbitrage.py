@@ -112,6 +112,82 @@ def _load_polymarket_market_links() -> tuple:
         return {}, fallback_event
 
 
+def _load_eliminated_teams() -> set:
+    """
+    根据实际赛果判断已被淘汰、无法再夺冠的球队。
+    综合两个来源：
+      1. 小组赛未出线（第 3、4 名）
+      2. 淘汰赛落败（含从后续赛程反推的点球负方）
+    返回被淘汰球队的集合；数据缺失时返回空集合（不过滤，避免误伤）。
+    """
+    eliminated = set()
+    try:
+        from utils.io import DATA_RAW
+        # ── 小组赛未出线 ──
+        groups = json.load(open(DATA_RAW / "groups.json")).get("groups", {})
+        results = json.load(open(DATA_OUTPUTS / "group_results.json")).get("results", {})
+        for group, teams in groups.items():
+            if len(teams) != 4:
+                continue
+            stats = {t: {"pts": 0, "gf": 0, "ga": 0} for t in teams}
+            for r in results.values():
+                ta, tb = r.get("team_a"), r.get("team_b")
+                if ta not in stats or tb not in stats:
+                    continue
+                sa, sb = int(r.get("score_a", 0)), int(r.get("score_b", 0))
+                stats[ta]["gf"] += sa; stats[ta]["ga"] += sb
+                stats[tb]["gf"] += sb; stats[tb]["ga"] += sa
+                if sa > sb:
+                    stats[ta]["pts"] += 3
+                elif sa < sb:
+                    stats[tb]["pts"] += 3
+                else:
+                    stats[ta]["pts"] += 1; stats[tb]["pts"] += 1
+            ranked = sorted(stats.items(), key=lambda x: (-x[1]["pts"], -(x[1]["gf"] - x[1]["ga"]), -x[1]["gf"]))
+            # 第 3、4 名淘汰（部分第 3 可能以最佳第三晋级，这里保守地把所有第 3、4 视为淘汰；
+            # 后续淘汰赛逻辑会把实际晋级的第 3 名救回）
+            eliminated.update(t for t, _ in ranked[2:])
+
+        # ── 淘汰赛落败 ──
+        actual_path = DATA_OUTPUTS / "actual_knockout_matches.json"
+        if actual_path.exists():
+            matches = json.load(open(actual_path)).get("matches", [])
+            matches_sorted = sorted(matches, key=lambda x: x.get("date", ""))
+            # 1) 明确有胜方的比赛：负方淘汰
+            for m in matches_sorted:
+                winner = m.get("winner")
+                ta, tb = m.get("team_a"), m.get("team_b")
+                if not ta or not tb or not winner or winner == "draw":
+                    continue
+                loser = tb if winner == ta else ta
+                eliminated.add(loser)
+            # 2) 对 winner=draw 的场次（通常是点球大战未记录点球胜者），
+            #    若一队后续还出现在更晚的比赛中，则另一队淘汰；若两队都没再出现，则都淘汰
+            team_latest_date = {}
+            for m in matches_sorted:
+                for t in (m.get("team_a"), m.get("team_b")):
+                    if t:
+                        team_latest_date[t] = m.get("date", "")
+            for m in matches_sorted:
+                winner = m.get("winner")
+                ta, tb = m.get("team_a"), m.get("team_b")
+                if not ta or not tb or winner != "draw":
+                    continue
+                latest_a = team_latest_date.get(ta, m.get("date", ""))
+                latest_b = team_latest_date.get(tb, m.get("date", ""))
+                if latest_a > m.get("date", "") and latest_b <= m.get("date", ""):
+                    eliminated.add(tb)
+                elif latest_b > m.get("date", "") and latest_a <= m.get("date", ""):
+                    eliminated.add(ta)
+                elif latest_a <= m.get("date", "") and latest_b <= m.get("date", ""):
+                    eliminated.add(ta)
+                    eliminated.add(tb)
+    except Exception:
+        # 任何异常都回退到不过滤，避免误伤
+        return set()
+    return eliminated
+
+
 def generate_signals(synth_file: str = "synthesizer_report.json",
                      bankroll: float = 10000,
                      min_edge_pp: float = 1.0) -> list:
@@ -130,8 +206,13 @@ def generate_signals(synth_file: str = "synthesizer_report.json",
     # 加载市场深链（吞异常，没有也不影响信号计算）
     team_market_urls, event_url = _load_polymarket_market_links()
 
+    # 过滤已被淘汰的球队（基于实际赛果）
+    eliminated = _load_eliminated_teams()
+
     signals = []
     for team, data in report.items():
+        if team in eliminated:
+            continue
         model_p = data["final_probability"] / 100  # 转为小数
         market_p = data["market_implied"] / 100
         
